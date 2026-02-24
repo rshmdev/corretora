@@ -17,8 +17,8 @@ services:
       - "8080:8080"
     environment:
       - MONGODB_URI=mongodb://mongodb:27017/trading
-      - FRONTEND_URL=http://frontend:3000
-      - API_URL=http://backend:8080
+      - FRONTEND_URL=${FRONTEND_URL:-https://brokerblackpearl.com.br}
+      - API_URL=${API_URL:-https://brokerblackpearl.com.br/api}
     depends_on:
       - mongodb
     networks:
