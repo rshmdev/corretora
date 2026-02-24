@@ -30,6 +30,8 @@ services:
       args:
         - NEXT_PUBLIC_API_URL=/server-api
         - NEXT_PUBLIC_WS_URL=/ws
+    environment:
+      - INTERNAL_API_URL=http://backend:8080
     container_name: frontend-next
     ports:
       - "3000:3000"
