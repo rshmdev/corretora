@@ -21,6 +21,7 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
 
 import java.io.IOException;
+
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
@@ -31,13 +32,13 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http.csrf(AbstractHttpConfigurer::disable);
-        http.cors(Customizer.withDefaults());
+        http.cors(cors -> cors.configurationSource(corsConfigurationSource()));
         http.authorizeHttpRequests(authorization -> {
-            authorization.requestMatchers("/auth/**", "/ws", "/ws/**", "/v1/admin/info", "/v1/account/deposit/**").permitAll()
+            authorization.requestMatchers("/auth/**", "/ws", "/ws/**", "/v1/admin/info", "/v1/account/deposit/**")
+                    .permitAll()
                     .anyRequest().authenticated();
         });
-        http.sessionManagement(session ->
-                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+        http.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
@@ -57,16 +58,27 @@ public class SecurityConfig {
     private String endpoint;
 
     @Bean
-    public CorsFilter corsFilter() {
+    public UrlBasedCorsConfigurationSource corsConfigurationSource() {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         CorsConfiguration config = new CorsConfiguration();
 
+        // Permitir Origem Principal
         config.addAllowedOrigin(endpoint);
+
+        // Adicionar variante www/não-www se necessário
+        if (endpoint.contains("brokerblackpearl.com.br")) {
+            if (endpoint.contains("www.")) {
+                config.addAllowedOrigin(endpoint.replace("www.", ""));
+            } else {
+                config.addAllowedOrigin(endpoint.replace("://", "://www."));
+            }
+        }
+
         config.addAllowedHeader("*");
         config.addAllowedMethod("*");
-        config.setAllowCredentials(true); // Adicione esta linha se usar credenciais
+        config.setAllowCredentials(true);
 
-        source.registerCorsConfiguration("/**", config); // Aplique para todas as rotas
-        return new CorsFilter(source);
+        source.registerCorsConfiguration("/**", config);
+        return source;
     }
 }
