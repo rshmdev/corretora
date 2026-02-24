@@ -77,7 +77,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     try {
       if (data) localStorage.setItem('account', JSON.stringify(data));
       else localStorage.removeItem('account');
-    } catch {}
+    } catch { }
   }, []);
 
   const refreshAccount = useCallback(async () => {
@@ -95,16 +95,17 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.status === 401 || response.status === 403) {
-        try { toast.info('Sessão expirada. Faça login novamente.'); } catch {}
+        try { toast.info('Sessão expirada. Faça login novamente.'); } catch { }
         await logout();
         return;
       }
       if (!response.ok) {
         throw new Error('Falha ao obter dados da conta');
       }
-      const data = (await response.json()) as Account;
-      setAccount(data.data as Account);
-      persistAccount(data.data as Account);
+      const data = (await response.json()) as any;
+      const accountData = data.data || data;
+      setAccount(accountData as Account);
+      persistAccount(accountData as Account);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Erro desconhecido';
       setError(message);
@@ -122,7 +123,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     if (client) {
       try {
         client.deactivate();
-      } catch {}
+      } catch { }
       clientRef.current = null;
     }
     // reset controle de inscrição
@@ -157,16 +158,17 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         const payload = msg.body ? JSON.parse(msg.body) : null;
         if (payload && typeof payload === 'object') {
           setAccount((prev) => {
-            const next = { ...(prev ?? {}), ...(payload as Account) } as Account;
+            // Se o payload vier com .data, usamos .data, senão usamos o payload direto
+            const accountData = (payload as any).data || payload;
+            const next = { ...(prev ?? {}), ...(accountData as Account) } as Account;
             persistAccount(next);
             return next;
           });
         }
-      } catch {}
-      refreshAccount().catch(() => {});
+      } catch { }
     };
 
-    try { activeSubscriptionRef.current?.unsubscribe(); } catch {}
+    try { activeSubscriptionRef.current?.unsubscribe(); } catch { }
     const unsubscribe = wsSubscribe(destination, handleMessage, { Authorization: `Bearer ${token}` });
     // adapt: guardamos um wrapper para compat de unsubscribe
     activeSubscriptionRef.current = { unsubscribe } as any;
@@ -199,7 +201,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     // Conecta/desconecta o websocket conforme disponibilidade de token
     connectWs();
     return () => {
-      try { disconnect(); } catch {}
+      try { disconnect(); } catch { }
     };
   }, [connectWs, disconnect]);
 
@@ -211,7 +213,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Reagir ao logout global: desconectar WS e limpar cache da conta
     function onLogout() {
-      try { disconnectWs(); } catch {}
+      try { disconnectWs(); } catch { }
       setAccount(null);
       persistAccount(null);
     }

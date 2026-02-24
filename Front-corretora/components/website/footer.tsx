@@ -11,32 +11,32 @@ import {
 import Link from 'next/link';
 
 const data = {
-  facebookLink: 'https://facebook.com/',
-  instaLink: 'https://instagram.com/',
-  twitterLink: 'https://twitter.com/',
-  githubLink: 'https://github.com/',
-  dribbbleLink: 'https://dribbble.com/',
+  facebookLink: process.env.NEXT_PUBLIC_SOCIAL_FACEBOOK || 'https://facebook.com/',
+  instaLink: process.env.NEXT_PUBLIC_SOCIAL_INSTAGRAM || 'https://instagram.com/',
+  twitterLink: process.env.NEXT_PUBLIC_SOCIAL_TWITTER || 'https://twitter.com/',
+  githubLink: process.env.NEXT_PUBLIC_SOCIAL_GITHUB || 'https://github.com/',
+  dribbbleLink: process.env.NEXT_PUBLIC_SOCIAL_DRIBBBLE || 'https://dribbble.com/',
   services: {
-    webdev: '/',
-    webdesign: '/',
-    marketing: '/',
-    googleads: '/',
+    webdev: '#features',
+    webdesign: '#features',
+    marketing: '#features',
+    googleads: '#features',
   },
   about: {
-    history: '/',
-    team: '/',
-    handbook: '/',
-    careers: '/',
+    history: '#home',
+    team: '#home',
+    handbook: '#features',
+    careers: '#home',
   },
   help: {
-    faqs: '/',
-    support: '/',
-    livechat: '/',
+    faqs: '#faq',
+    support: '#faq',
+    livechat: '#faq',
   },
   contact: {
-    email: 'suporte@grupolothus.com',
-    phone: '+55 11 99999-9999',
-    address: 'São Paulo, Brasil',
+    email: process.env.NEXT_PUBLIC_CONTACT_EMAIL || 'suporte@corretora.com',
+    phone: process.env.NEXT_PUBLIC_CONTACT_PHONE || '+55 11 99999-9999',
+    address: process.env.NEXT_PUBLIC_CONTACT_ADDRESS || 'São Paulo, Brasil',
   },
   company: {
     description:
@@ -151,11 +151,10 @@ export default function Footer4Col() {
                   <li key={text}>
                     <a
                       href={href}
-                      className={`${
-                        hasIndicator
+                      className={`${hasIndicator
                           ? 'group flex justify-center gap-1.5 sm:justify-start'
                           : 'text-secondary-foreground/70 transition'
-                      }`}
+                        }`}
                     >
                       <span className="text-secondary-foreground/70 transition">
                         {text}
@@ -206,7 +205,7 @@ export default function Footer4Col() {
             </p>
 
             <p className="text-secondary-foreground/70 mt-4 text-sm transition sm:order-first sm:mt-0">
-            ISEVEN - Licenciada e regulamentada. Trading envolve riscos. Capital sujeito a risco.
+              ISEVEN - Licenciada e regulamentada. Trading envolve riscos. Capital sujeito a risco.
             </p>
           </div>
         </div>

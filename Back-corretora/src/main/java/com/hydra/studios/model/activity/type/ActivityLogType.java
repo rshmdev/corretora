@@ -10,6 +10,7 @@ public enum ActivityLogType {
 
     TRADE_CREATE,
     TRADE_CLOSE,
+    TRADE_CASHOUT,
 
     UNDEFINED;
 

@@ -10,8 +10,8 @@ import okhttp3.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -24,7 +24,7 @@ public class BinanceKlineService {
     private KlineRepository klineRepository;
 
     @Getter
-    private List<Kline> klines = new CopyOnWriteArrayList<>();
+    private Map<String, Kline> klines = new ConcurrentHashMap<>();
 
     public BinanceKlineService(KlineController klineController) {
         this.klineController = klineController;
@@ -34,7 +34,8 @@ public class BinanceKlineService {
         StringBuilder url = new StringBuilder("wss://stream.binance.com:9443/stream?streams=");
 
         for (int i = 0; i < pairs.length; i++) {
-            if (i > 0) url.append("/");
+            if (i > 0)
+                url.append("/");
             url.append(pairs[i].toLowerCase()).append("@kline_").append(interval);
         }
 
@@ -66,12 +67,11 @@ public class BinanceKlineService {
                         .delete(System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(31))
                         .build();
 
-                klines.add(simpleKline);
+                klines.put(pair, simpleKline);
 
                 klineController.publishKline(pair, interval, kl);
             }
         });
     }
-
 
 }

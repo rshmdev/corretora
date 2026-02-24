@@ -73,12 +73,12 @@ export default function HeaderApp({ cryptoOptions, selectedCryptoValue, onChange
   async function handleLogout() { setDropdownOpen(false); await logout(); }
 
   return (
-    <header className="w-full bg-neutral-950 border-b border-neutral-800 px-4 py-2 flex items-center justify-between z-50 relative">
+    <header className="w-full bg-neutral-950 border-b flex-wrap border-neutral-800 px-4 py-2 flex items-center justify-between z-50 relative">
       <div className="flex items-center gap-2">
 
         <span className="flex items-center gap-2">
           <Landmark className="h-8 w-8 text-green-500" />
-          <span className="text-white font-bold text-xl tracking-tight uppercase">blackpearlbroker </span>
+          <span className="text-white font-bold text-xl tracking-tight uppercase">blackpearlbroker</span>
         </span>
       </div>
 
@@ -123,7 +123,7 @@ export default function HeaderApp({ cryptoOptions, selectedCryptoValue, onChange
               const bonus = Number((wallet as any)?.bonus ?? 0);
               const balance = Number((wallet as any)?.balance ?? 0);
               const value = isDemo ? demo : (deposit + bonus + balance);
-              return `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
+              return `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
             })()}
           </span>
         </div>
@@ -136,7 +136,7 @@ export default function HeaderApp({ cryptoOptions, selectedCryptoValue, onChange
             aria-expanded={dropdownOpen}
           >
             <img
-              src={""}
+              src={"https://cdn-icons-png.flaticon.com/512/149/149071.png"}
               alt={account?.firstName + " " + account?.lastName}
               className="h-9 w-9 rounded-full border-2 border-green-400"
             />
@@ -157,12 +157,12 @@ export default function HeaderApp({ cryptoOptions, selectedCryptoValue, onChange
             <div className="absolute right-0 mt-2 w-56 bg-neutral-900 border border-neutral-800 rounded-lg shadow-lg z-50 py-2 animate-fade-in">
 
               <div className="block sm:hidden">
-                <a
+                {/* <a
                   href="/app/open-trading"
                   className="block px-4 py-2 text-gray-200 hover:bg-neutral-800 transition"
                 >
                   Operações Abertas
-                </a>
+                </a> */}
                 <a
                   href="/app/trading-history"
                   className="block px-4 py-2 text-gray-200 hover:bg-neutral-800 transition"
@@ -175,18 +175,18 @@ export default function HeaderApp({ cryptoOptions, selectedCryptoValue, onChange
                 >
                   Melhores Traders
                 </a>
-                <a
+                {/* <a
                   href="/app/copy-trader"
                   className="block px-4 py-2 text-gray-200 hover:bg-neutral-800 transition"
                 >
                   Copy Trader
-                </a>
-                <a
+                </a> */}
+                {/* <a
                   href="/app/support"
                   className="block px-4 py-2 text-gray-200 hover:bg-neutral-800 transition"
                 >
                   Suporte
-                </a>
+                </a> */}
                 <div className="border-t border-neutral-800 my-2" />
               </div>
 

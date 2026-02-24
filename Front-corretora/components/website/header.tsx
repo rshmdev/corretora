@@ -12,19 +12,22 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { name: 'Inicio', href: '/' },
-  { name: 'Plataforma', href: '/features' },
-  { name: 'Recursos', href: '/solutions' },
-  { name: 'Trading', href: '/pricing' },
-
+  { name: 'Inicio', href: '#home' },
+  { name: 'Funcionalidades', href: '#features' },
+  { name: 'Dúvidas', href: '#faq' },
+  { name: 'Começar', href: '#start' },
 ];
 
 export default function Header2() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    setIsLoggedIn(!!token);
+
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 10);
     };
@@ -110,7 +113,7 @@ export default function Header2() {
                   onMouseEnter={() => setHoveredItem(item.name)}
                   onMouseLeave={() => setHoveredItem(null)}
                 >
-                  <Link prefetch={false} href={item.href}
+                  <Link href={item.href}
                     className="text-foreground/80 hover:text-foreground relative rounded-lg px-4 py-2 text-sm font-medium transition-colors duration-200"
                   >
                     {hoveredItem === item.name && (
@@ -137,24 +140,37 @@ export default function Header2() {
               className="hidden items-center space-x-3 lg:flex"
               variants={itemVariants}
             >
-
-              <Link prefetch={false} href="/auth/login"
-                className="text-foreground/80 hover:text-foreground px-4 py-2 text-sm font-medium transition-colors duration-200"
-              >
-                Login
-              </Link>
-
-              <motion.div
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <Link prefetch={false} href="/auth/register"
-                  className="bg-foreground text-background hover:bg-foreground/90 inline-flex items-center space-x-2 rounded-lg px-5 py-2.5 text-sm font-medium shadow-sm transition-all duration-200"
+              {isLoggedIn ? (
+                <Link
+                  href="/app/traderoom"
+                  className="group relative inline-flex items-center justify-center overflow-hidden rounded-full bg-primary px-8 py-2.5 text-sm font-semibold text-primary-foreground transition-all duration-300 hover:scale-105 hover:shadow-[0_0_20px_rgba(120,119,198,0.3)]"
                 >
-                  <span>Começar agora</span>
-                  <ArrowRight className="h-4 w-4" />
+                  <span className="relative z-10 flex items-center gap-2">
+                    Entrar no App
+                    <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
+                  </span>
                 </Link>
-              </motion.div>
+              ) : (
+                <>
+                  <Link href="/auth/login"
+                    className="text-foreground/80 hover:text-foreground px-4 py-2 text-sm font-medium transition-colors duration-200"
+                  >
+                    Login
+                  </Link>
+
+                  <motion.div
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                  >
+                    <Link href="/auth/register"
+                      className="bg-foreground text-background hover:bg-foreground/90 inline-flex items-center space-x-2 rounded-lg px-5 py-2.5 text-sm font-medium shadow-sm transition-all duration-200"
+                    >
+                      <span>Começar agora</span>
+                      <ArrowRight className="h-4 w-4" />
+                    </Link>
+                  </motion.div>
+                </>
+              )}
             </motion.div>
 
             <motion.button
@@ -194,7 +210,7 @@ export default function Header2() {
                 <div className="space-y-1">
                   {navItems.map((item) => (
                     <motion.div key={item.name} variants={mobileItemVariants}>
-                      <Link prefetch={false} href={item.href}
+                      <Link href={item.href}
                         className="text-foreground hover:bg-muted block rounded-lg px-4 py-3 font-medium transition-colors duration-200"
                         onClick={() => setIsMobileMenuOpen(false)}
                       >
@@ -208,18 +224,29 @@ export default function Header2() {
                   className="border-border space-y-3 border-t pt-6"
                   variants={mobileItemVariants}
                 >
-                  <Link prefetch={false} href="/auth/login"
-                    className="text-foreground hover:bg-muted block w-full rounded-lg py-3 text-center font-medium transition-colors duration-200"
-                    onClick={() => setIsMobileMenuOpen(false)}
-                  >
-                    Entrar
-                  </Link>
-                  <Link prefetch={false} href="/auth/register"
-                    className="bg-foreground text-background hover:bg-foreground/90 block w-full rounded-lg py-3 text-center font-medium transition-all duration-200"
-                    onClick={() => setIsMobileMenuOpen(false)}
-                  >
-                    Começar agora
-                  </Link>
+                  {isLoggedIn ? (
+                    <Link href="/app/traderoom"
+                      className="bg-foreground text-background hover:bg-foreground/90 block w-full rounded-lg py-3 text-center font-medium transition-all duration-200"
+                      onClick={() => setIsMobileMenuOpen(false)}
+                    >
+                      Entrar no App
+                    </Link>
+                  ) : (
+                    <>
+                      <Link href="/auth/login"
+                        className="text-foreground hover:bg-muted block w-full rounded-lg py-3 text-center font-medium transition-colors duration-200"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                      >
+                        Entrar
+                      </Link>
+                      <Link href="/auth/register"
+                        className="bg-foreground text-background hover:bg-foreground/90 block w-full rounded-lg py-3 text-center font-medium transition-all duration-200"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                      >
+                        Começar agora
+                      </Link>
+                    </>
+                  )}
                 </motion.div>
               </div>
             </motion.div>

@@ -3,7 +3,7 @@ import { ArrowRight } from 'lucide-react';
 
 export default function Hero1() {
   return (
-    <div className="relative w-full bg-neutral-950">
+    <div className="relative w-full bg-neutral-950" id="home">
       <div className="absolute top-0 z-[0] h-full w-full bg-neutral-900/10 bg-[radial-gradient(ellipse_20%_80%_at_50%_-20%,rgba(120,119,198,0.3),rgba(255,255,255,0))]"></div>
       <section className="relative z-1 mx-auto max-w-full">
         <div className="pointer-events-none absolute h-full w-full overflow-hidden opacity-50 [perspective:200px]">

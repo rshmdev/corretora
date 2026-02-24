@@ -2,11 +2,11 @@ import { ArrowRight } from 'lucide-react';
 
 export default function CTA3() {
   return (
-    <section className="relative px-4 py-24 md:px-6">
+    <section className="relative px-4 py-24 md:px-6" id="start">
       <div className="mx-auto max-w-7xl">
         <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-background/80 shadow-2xl transition-all duration-500 hover:border-primary/30 hover:shadow-[0_0_30px_rgba(120,119,198,0.15)]">
           <div className="relative z-10 grid gap-0 lg:grid-cols-2">
-          
+
             <div className="p-8 md:p-12 lg:p-16">
               <div className="mb-6 inline-block rounded-full border border-border/50 bg-secondary/80 px-4 py-1 text-primary font-semibold">
                 NÃO PERCA ESSA OPORTUNIDADE
@@ -124,7 +124,7 @@ export default function CTA3() {
               </div>
             </div>
 
-            
+
             <div className="relative flex flex-col justify-center overflow-hidden bg-neutral-900/90 p-8 text-foreground md:p-12 lg:p-16">
               <div className="absolute top-0 right-0 h-full w-full opacity-10"></div>
               <div className="relative z-10">
@@ -172,7 +172,7 @@ export default function CTA3() {
                 </div>
               </div>
             </div>
-           
+
           </div>
         </div>
       </div>

@@ -6,20 +6,17 @@ import com.hydra.studios.component.jwt.JWTComponent;
 import com.hydra.studios.service.account.AccountService;
 import com.hydra.studios.service.bet.BetService;
 import com.hydra.studios.service.exchange.ExchangeService;
-import com.hydra.studios.service.transaction.TransactionService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
-import java.security.Principal;
 import java.util.HashMap;
 import java.util.concurrent.TimeUnit;
 
 @Controller
 public class BetController {
-
 
     @Autowired
     private JWTComponent jwtComponent;
@@ -81,20 +78,23 @@ public class BetController {
         if (user == null) {
             object.addProperty("status", "error");
             object.addProperty("message", "User not found");
-            messagingTemplate.convertAndSend("/topic/bets/" + user.getId().toString(), object.toString());
+            // Nota: Se user for null, não temos o ID para a rota personalizada,
+            // então não enviamos nada ou enviamos para um log de erro.
             return;
         }
 
         if (cooldowns.containsKey(user.getEmail()) && cooldowns.get(user.getEmail()) > System.currentTimeMillis()) {
             object.addProperty("status", "error");
-            object.addProperty("message", "You are on cooldown, please wait " + ((cooldowns.get(user.getEmail()) - System.currentTimeMillis()) / 1000) + " seconds");
+            object.addProperty("message", "You are on cooldown, please wait "
+                    + ((cooldowns.get(user.getEmail()) - System.currentTimeMillis()) / 1000) + " seconds");
             messagingTemplate.convertAndSend("/topic/bets/" + user.getId().toString(), object.toString());
             return;
         }
 
         cooldowns.put(user.getEmail(), System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(2));
 
-        var balanceTotal = (demo ? user.getWallet().getDemo() : user.getWallet().getBalance() + user.getWallet().getDeposit() + user.getWallet().getBonus());
+        var balanceTotal = (demo ? user.getWallet().getDemo()
+                : user.getWallet().getBalance() + user.getWallet().getDeposit() + user.getWallet().getBonus());
 
         if (bet > balanceTotal) {
             object.addProperty("status", "error");
@@ -121,15 +121,46 @@ public class BetController {
             return;
         }
 
-        object.addProperty("status", "ok");
-        object.addProperty("betId", save.getId());
-        object.addProperty("username", user.getEmail());
-        object.addProperty("pair", pair);
-        object.addProperty("bet", bet);
-        object.addProperty("interval", interval);
-        object.addProperty("arrow", arrow);
-        object.addProperty("closeIn", save.getFinishIn());
+        var betResponse = new JsonObject();
+        betResponse.addProperty("id", save.getId());
+        betResponse.addProperty("pair", save.getPair());
+        betResponse.addProperty("interval", save.getInterval());
+        betResponse.addProperty("arrow", save.getArrow() != null ? save.getArrow().name() : "UP");
+        betResponse.addProperty("bet", save.getBet());
+        betResponse.addProperty("starredPrice", save.getStarredPrice());
+        betResponse.addProperty("createdAt", save.getCreatedAt());
+        betResponse.addProperty("finishIn", save.getFinishIn());
+        betResponse.addProperty("demo", save.isDemo());
+        messagingTemplate.convertAndSend("/topic/bets/" + user.getId().toString(), betResponse.toString());
+    }
 
+    @MessageMapping("/cashout")
+    public void handleCashout(@Payload String string) {
+        var message = JsonParser.parseString(string).getAsJsonObject();
+        var token = message.get("token").getAsString();
+        var username = jwtComponent.extractUsername(token);
+        var user = accountService.getAccount(username);
+        var object = new JsonObject();
+
+        if (!message.has("betId")) {
+            object.addProperty("status", "error");
+            object.addProperty("message", "Invalid message format: betId missing");
+            messagingTemplate.convertAndSend("/topic/bets/" + user.getId().toString(), object.toString());
+            return;
+        }
+
+        var betId = message.get("betId").getAsString();
+        var bet = betService.closeBetCashout(betId);
+
+        if (bet == null) {
+            object.addProperty("status", "error");
+            object.addProperty("message", "Bet not found or already closed");
+            messagingTemplate.convertAndSend("/topic/bets/" + user.getId().toString(), object.toString());
+            return;
+        }
+
+        object.addProperty("status", "ok");
+        object.addProperty("message", "Cashout processed successfully");
         messagingTemplate.convertAndSend("/topic/bets/" + user.getId().toString(), object.toString());
     }
 }

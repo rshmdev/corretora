@@ -1,10 +1,7 @@
 package com.hydra.studios.service.bet;
 
-import com.google.gson.JsonParser;
 import com.hydra.studios.App;
 import com.hydra.studios.model.account.Account;
-import com.hydra.studios.model.activity.ActivityLog;
-import com.hydra.studios.model.activity.type.ActivityLogType;
 import com.hydra.studios.model.affiliate.AffiliateLog;
 import com.hydra.studios.model.affiliate.revenue.AffiliateRevenueType;
 import com.hydra.studios.model.affiliate.type.AffiliateType;
@@ -24,8 +21,6 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-
-import static com.hydra.studios.model.activity.type.ActivityLogType.TRADE_CREATE;
 
 @Service
 public class BetService {
@@ -51,8 +46,9 @@ public class BetService {
     @Autowired
     private ActivityService activityService;
 
-    public Bet createBet(Account account, String pair, double amount, String interval, BetArrow betArrow, boolean demo) {
-        var starredKline = binanceKlineService.getKlines().stream().filter(k -> k.getPair().equals(pair)).reduce((first, last) -> last).orElse(null);
+    public Bet createBet(Account account, String pair, double amount, String interval, BetArrow betArrow,
+            boolean demo) {
+        var starredKline = binanceKlineService.getKlines().get(pair);
 
         if (starredKline == null) {
             return null;
@@ -70,7 +66,9 @@ public class BetService {
                 .createdAt(System.currentTimeMillis())
                 .demo(demo)
                 .finished(false)
-                .finishIn(System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(Integer.parseInt(interval.replace("m", "")))).build();
+                .finishIn(System.currentTimeMillis()
+                        + TimeUnit.MINUTES.toMillis(Integer.parseInt(interval.replace("m", ""))))
+                .build();
 
         if (demo) {
             account.getWallet().setDemo(account.getWallet().getDemo() - amount);
@@ -89,10 +87,86 @@ public class BetService {
             account.getWallet().setBalance(account.getWallet().getBalance() - balanceUsed);
         }
 
-        activityService.createActivityLog(account.getId(), "TRADE_CREATE", "{\"pair\":\""+pair+"\",\"amount\":"+amount+",\"interval\":\""+interval+"\",\"arrow\":\""+betArrow+"\",\"demo\":"+demo+"}");
+        activityService.createActivityLog(account.getId(), "TRADE_CREATE", "{\"pair\":\"" + pair + "\",\"amount\":"
+                + amount + ",\"interval\":\"" + interval + "\",\"arrow\":\"" + betArrow + "\",\"demo\":" + demo + "}");
 
         accController.publish(account.getId(), account);
         accountService.save(account);
+        return betRepository.save(bet);
+    }
+
+    public Bet closeBetCashout(String betId) {
+        var bet = betRepository.findById(betId).orElse(null);
+        if (bet == null || bet.isFinished()) {
+            return null;
+        }
+
+        var kline = binanceKlineService.getKlines().get(bet.getPair());
+
+        if (kline == null) {
+            return null;
+        }
+
+        var closingPrice = kline.getValue();
+        var upOrDown = closingPrice > bet.getStarredPrice() ? BetArrow.UP
+                : closingPrice < bet.getStarredPrice() ? BetArrow.DOWN : null;
+
+        // Mesmo multiplicador usado no frontend para exibir o P/L (50x amplificação
+        // visual)
+        final double PNL_DISPLAY_MULTIPLIER = 50.0;
+
+        // P/L real em percentual (ex: 0.08%)
+        double realPnlPercent = Math.abs((closingPrice - bet.getStarredPrice()) / bet.getStarredPrice() * 100);
+        // P/L amplificado — o que o usuário vê na tela (ex: 4.0%)
+        double displayPnlPercent = realPnlPercent * PNL_DISPLAY_MULTIPLIER;
+
+        double payout;
+
+        if (upOrDown == bet.getArrow()) {
+            // Ganhando: retorna aposta + porcentagem exibida
+            // Ex: aposta R$9, mostrando +4% → payout = 9 + 9*0.04 = 9.36
+            payout = bet.getBet() + bet.getBet() * (displayPnlPercent / 100.0);
+            bet.setStatus(BetStatus.WIN);
+        } else {
+            // Perdendo: desconta a porcentagem exibida da aposta
+            // Ex: aposta R$9, mostrando -4% → payout = 9 - 9*0.04 = 8.64
+            payout = Math.max(0, bet.getBet() - bet.getBet() * (displayPnlPercent / 100.0));
+            bet.setStatus(BetStatus.LOSE);
+        }
+
+        bet.setResult(payout);
+        bet.setFinishedPrice(closingPrice);
+        bet.setFinished(true);
+
+        var account = accountService.getAccountById(bet.getAccountId());
+        if (bet.isDemo()) {
+            account.getWallet().setDemo(account.getWallet().getDemo() + payout);
+        } else {
+            account.getWallet().setBalance(account.getWallet().getBalance() + payout);
+        }
+
+        accountService.save(account);
+        accController.publish(account.getId(), account);
+
+        // Publica o resultado do bet manualmente (Gson nao serializa campos Lombok no
+        // Java 9+)
+        var betJson = new com.google.gson.JsonObject();
+        betJson.addProperty("id", bet.getId());
+        betJson.addProperty("pair", bet.getPair());
+        betJson.addProperty("interval", bet.getInterval());
+        betJson.addProperty("arrow", bet.getArrow() != null ? bet.getArrow().name() : "");
+        betJson.addProperty("bet", bet.getBet());
+        betJson.addProperty("result", bet.getResult());
+        betJson.addProperty("starredPrice", bet.getStarredPrice());
+        betJson.addProperty("finishedPrice", bet.getFinishedPrice());
+        betJson.addProperty("status", bet.getStatus() != null ? bet.getStatus().name() : "");
+        betJson.addProperty("finished", bet.isFinished());
+        accController.publishBet(account.getId(), betJson.toString());
+
+        activityService.createActivityLog(account.getId(), "TRADE_CASHOUT",
+                "{\"pair\":\"" + bet.getPair() + "\",\"amount\":" + bet.getBet() + ",\"payout\":" + payout
+                        + ",\"status\":\"" + bet.getStatus() + "\"}");
+
         return betRepository.save(bet);
     }
 
@@ -107,7 +181,8 @@ public class BetService {
 
         var account = accountService.getAccountById(bet.getAccountId());
 
-        var upOrDown = closingPrice > bet.getStarredPrice() ? BetArrow.UP : closingPrice < bet.getStarredPrice() ? BetArrow.DOWN : null;
+        var upOrDown = closingPrice > bet.getStarredPrice() ? BetArrow.UP
+                : closingPrice < bet.getStarredPrice() ? BetArrow.DOWN : null;
 
         if (upOrDown == null) {
             bet.setStatus(BetStatus.LOSE);
@@ -124,7 +199,7 @@ public class BetService {
         }
 
         bet.setFinished(true);
-        
+
         if (bet.getStatus() == BetStatus.WIN) {
             if (bet.isDemo()) {
                 account.getWallet().setDemo(account.getWallet().getDemo() + bet.getResult());
@@ -142,8 +217,11 @@ public class BetService {
                     var revenue = bet.getBet() * ((double) aff.getAffiliate().getRevenueShare() / 100);
                     aff.getWallet().setAffiliate(aff.getWallet().getAffiliate() + revenue);
 
-                    var affLog = AffiliateLog.builder().id(UUID.randomUUID().toString()).affiliateId(aff.getId()).userId(account.getId()).userName(account.getFirstName() + " " + account.getLastName())
-                            .affiliateType(AffiliateType.LOSS).revenueType(AffiliateRevenueType.REVSHARE).amountBase(bet.getBet()).totalWin(revenue).operationId(bet.getId()).createdAt(System.currentTimeMillis()).build();
+                    var affLog = AffiliateLog.builder().id(UUID.randomUUID().toString()).affiliateId(aff.getId())
+                            .userId(account.getId()).userName(account.getFirstName() + " " + account.getLastName())
+                            .affiliateType(AffiliateType.LOSS).revenueType(AffiliateRevenueType.REVSHARE)
+                            .amountBase(bet.getBet()).totalWin(revenue).operationId(bet.getId())
+                            .createdAt(System.currentTimeMillis()).build();
 
                     affiliateService.create(affLog);
 
@@ -153,8 +231,12 @@ public class BetService {
                             var superRevenue = revenue * ((double) 8 / 100);
                             superAff.getWallet().setAffiliate(superAff.getWallet().getAffiliate() + superRevenue);
 
-                            var superAffLog = AffiliateLog.builder().id(UUID.randomUUID().toString()).affiliateId(superAff.getId()).userId(account.getId()).userName(account.getFirstName() + " " + account.getLastName())
-                                    .affiliateType(AffiliateType.LOSS).revenueType(AffiliateRevenueType.SUB_AFFILIATE).amountBase(bet.getBet()).totalWin(superRevenue).operationId(bet.getId()).createdAt(System.currentTimeMillis()).build();
+                            var superAffLog = AffiliateLog.builder().id(UUID.randomUUID().toString())
+                                    .affiliateId(superAff.getId()).userId(account.getId())
+                                    .userName(account.getFirstName() + " " + account.getLastName())
+                                    .affiliateType(AffiliateType.LOSS).revenueType(AffiliateRevenueType.SUB_AFFILIATE)
+                                    .amountBase(bet.getBet()).totalWin(superRevenue).operationId(bet.getId())
+                                    .createdAt(System.currentTimeMillis()).build();
 
                             affiliateService.create(superAffLog);
                             accController.publish(superAff.getId(), superAff);
@@ -197,7 +279,11 @@ public class BetService {
 
         accController.publishBet(account.getId(), App.getGson().toJson(bet));
 
-        activityService.createActivityLog(account.getId(), "TRADE_CLOSE", "{\"pair\":\""+bet.getPair()+"\",\"amount\":"+bet.getBet()+",\"interval\":\""+bet.getInterval()+"\",\"arrow\":\""+bet.getArrow()+"\",\"demo\":"+bet.isDemo()+",\"status\":\""+bet.getStatus()+"\",\"result\":"+bet.getResult()+",\"starredPrice\":"+bet.getStarredPrice()+",\"finishedPrice\":"+bet.getFinishedPrice()+"}");
+        activityService.createActivityLog(account.getId(), "TRADE_CLOSE",
+                "{\"pair\":\"" + bet.getPair() + "\",\"amount\":" + bet.getBet() + ",\"interval\":\""
+                        + bet.getInterval() + "\",\"arrow\":\"" + bet.getArrow() + "\",\"demo\":" + bet.isDemo()
+                        + ",\"status\":\"" + bet.getStatus() + "\",\"result\":" + bet.getResult() + ",\"starredPrice\":"
+                        + bet.getStarredPrice() + ",\"finishedPrice\":" + bet.getFinishedPrice() + "}");
 
         return betRepository.save(bet);
     }
@@ -205,9 +291,11 @@ public class BetService {
     public List<Bet> getBetsByAccountIdAndNotFinished(String accountId) {
         return betRepository.findAllByAccountIdAndFinished(accountId, false);
     }
+
     public List<Bet> getBetsByAccountId(String accountId) {
         return betRepository.findALlByAccountId(accountId);
     }
+
     public List<Bet> getBetsByFinishIn(long timestamp, double finishedPrice) {
         return betRepository.findAllByFinishInBeforeAndFinishedPrice(timestamp, finishedPrice);
     }

@@ -1,14 +1,10 @@
 package com.hydra.studios.schedule;
 
-import com.hydra.studios.model.exchange.kline.Kline;
 import com.hydra.studios.service.bet.BetService;
 import com.hydra.studios.service.binance.BinanceKlineService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-
-import java.util.Comparator;
-import java.util.stream.Collectors;
 
 @Component
 public class KlineSchedule {
@@ -21,10 +17,7 @@ public class KlineSchedule {
 
     @Scheduled(fixedRate = 1000)
     public void fetchKlines() {
-        var klines = binanceKlineService.getKlines();
-        var expired = klines.stream().filter(k -> k != null && k.getDelete() < System.currentTimeMillis()).toList();
-
-        klines.removeAll(expired);
+        // No longer needed to cleanup since we only keep the latest per pair in the Map
     }
 
     @Scheduled(fixedRate = 1000)
@@ -33,8 +26,7 @@ public class KlineSchedule {
         var bets = betService.getBetsByFinishIn(System.currentTimeMillis(), 0);
 
         for (var bet : bets) {
-            var klinesPair = klines.stream().filter(k -> k != null && k.getPair().equals(bet.getPair())).toList();
-            var kline = klinesPair.stream().max(Comparator.comparingLong(Kline::getDelete)).orElse(null);
+            var kline = klines.get(bet.getPair());
             if (kline == null) {
                 continue;
             }

@@ -27,27 +27,27 @@ const icons = {
   copytrader: (
     <svg width="30" height="30" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
       <rect x="7" y="7" width="10" height="10" rx="2" stroke="currentColor" />
-      <rect x="3" y="3" width="10" height="10" rx="2" stroke="currentColor" opacity="0.4"/>
+      <rect x="3" y="3" width="10" height="10" rx="2" stroke="currentColor" opacity="0.4" />
     </svg>
-  ),
-  suporte: (
-    <svg width="30" height="30" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="10" stroke="currentColor" />
-      <path d="M12 16h.01M12 8v2a2 2 0 0 1 2 2c0 1.105-1.343 2-3 2" stroke="currentColor" />
-    </svg>
-  ),
+  )
+  // suporte: (
+  //   <svg width="30" height="30" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+  //     <circle cx="12" cy="12" r="10" stroke="currentColor" />
+  //     <path d="M12 16h.01M12 8v2a2 2 0 0 1 2 2c0 1.105-1.343 2-3 2" stroke="currentColor" />
+  //   </svg>
+  // ),
 };
 
 const sidebarItems = [
-/*
-  {
-    key: "operacoes",
-    label: "Operações Abertas",
-    showPanel: false,
-    icon: icons.operacoes,
-    href: "/app/open-trading",
-  },
-   */
+  /*
+    {
+      key: "operacoes",
+      label: "Operações Abertas",
+      showPanel: false,
+      icon: icons.operacoes,
+      href: "/app/open-trading",
+    },
+     */
   {
     key: "traderoom",
     label: "Traderoom",
@@ -77,13 +77,13 @@ const sidebarItems = [
     href: "/app/copy-trader",
     icon: icons.copytrader,
   }, */
-  {
-    key: "suporte",
-    label: "Suporte",
-    showPanel: false,
-    href: "/app/support",
-    icon: icons.suporte,
-  },
+  // {
+  //   key: "suporte",
+  //   label: "Suporte",
+  //   showPanel: false,
+  //   href: "/app/support",
+  //   icon: icons.suporte,
+  // },
 ];
 
 

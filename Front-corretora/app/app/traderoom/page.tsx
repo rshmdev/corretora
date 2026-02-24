@@ -48,6 +48,36 @@ const CRYPTOS = [
     icon: "https://cryptofonts.com/img/icons/xrp.svg",
     tradingViewSymbol: "BINANCE:XRPUSDT",
   },
+  {
+    label: "Chainlink",
+    value: "LINK/USDT",
+    icon: "https://cryptofonts.com/img/icons/link.svg",
+    tradingViewSymbol: "BINANCE:LINKUSDT",
+  },
+  {
+    label: "Avalanche",
+    value: "AVAX/USDT",
+    icon: "https://cryptofonts.com/img/icons/avax.svg",
+    tradingViewSymbol: "BINANCE:AVAXUSDT",
+  },
+  {
+    label: "Shiba Inu",
+    value: "SHIB/USDT",
+    icon: "https://cryptofonts.com/img/icons/shib.svg",
+    tradingViewSymbol: "BINANCE:SHIBUSDT",
+  },
+  {
+    label: "TRON",
+    value: "TRX/USDT",
+    icon: "https://cryptofonts.com/img/icons/trx.svg",
+    tradingViewSymbol: "BINANCE:TRXUSDT",
+  },
+  {
+    label: "Pepe",
+    value: "PEPE/USDT",
+    icon: "https://cryptofonts.com/img/icons/pepe.svg",
+    tradingViewSymbol: "BINANCE:PEPEUSDT",
+  },
 ];
 
 export default function Home() {
@@ -216,7 +246,12 @@ export default function Home() {
     lineId?: string; // ID da linha desenhada no gráfico
   };
 
+  function normalizePair(p: string): string {
+    return (p || "").replace(/\//g, "").toUpperCase();
+  }
+
   const [activeBets, setActiveBets] = useState<ActiveBet[]>([]);
+  const [prices, setPrices] = useState<Record<string, number>>({});
   const [nowTs, setNowTs] = useState<number>(Date.now());
 
   // Carrega apostas ativas do localStorage ao montar o componente
@@ -257,6 +292,48 @@ export default function Home() {
     const iv = setInterval(() => setNowTs(Date.now()), 1000);
     return () => clearInterval(iv);
   }, []);
+
+  // Subscreve aos preços das moedas das apostas ativas
+  useEffect(() => {
+    if (activeBets.length === 0) return;
+
+    const unsubscribers: (() => void)[] = [];
+    const pairs = Array.from(new Set(activeBets.map(b => normalizePair(b.pair))));
+    console.log('Subscrevendo aos pares:', pairs);
+    pairs.forEach(pair => {
+      const destination = `/topic/klines/${pair}/1m`;
+      const un = subscribe(destination, (msg) => {
+        console.log('✅ Preço recebido para', pair);
+        try {
+          console.log('✅ Preço recebido para', pair);
+          const payload = JSON.parse(msg.body);
+          if (payload && payload.close) {
+            console.log('✅ Preço recebido para', payload);
+            setPrices(prev => ({ ...prev, [pair]: payload.close }));
+          }
+        } catch (e) { }
+      });
+      unsubscribers.push(un);
+    });
+
+    return () => unsubscribers.forEach(un => un());
+  }, [activeBets, subscribe]);
+
+  // Subscreve ao preço do par atualmente selecionado para ter o preço pronto no momento da aposta
+  useEffect(() => {
+    if (!moeda) return;
+    const pair = normalizePair(moeda);
+    const destination = `/topic/klines/${pair}/1m`;
+    const un = subscribe(destination, (msg) => {
+      try {
+        const payload = JSON.parse(msg.body);
+        if (payload && payload.close) {
+          setPrices(prev => ({ ...prev, [pair]: payload.close }));
+        }
+      } catch (e) { }
+    });
+    return () => un?.();
+  }, [moeda, subscribe]);
 
   useEffect(() => {
     // Remove expiradas e fechadas
@@ -449,6 +526,7 @@ export default function Home() {
         const payload = msg.body ? JSON.parse(msg.body) : null;
         if (payload && typeof payload === "object") {
           const status = (payload as any)?.status;
+          console.log('🔵 WS bet recebido | status:', status, '| keys:', Object.keys(payload));
           if (String(status).toLowerCase() === "error") {
             try {
               setActiveBets((prev) => {
@@ -503,11 +581,11 @@ export default function Home() {
                   return String(b.serverId) !== String(serverId);
                 }
                 // Fallback: casar por par/seta/intervalo em janela de tempo
-                const pair = (payload?.pair ?? '').toString().replace('/', '');
+                const pair = normalizePair(payload?.pair ?? '');
                 const arrow = String(payload?.arrow ?? '').toUpperCase();
                 const minutes = extractIntervalMinutes(payload?.interval) ?? null;
                 if (!pair || !arrow || minutes == null) return true;
-                const isSameKey = b.pair.replace('/', '') === pair && b.arrow === (arrow === 'DOWN' ? 'DOWN' : 'UP') && b.intervalMinutes === minutes;
+                const isSameKey = normalizePair(b.pair) === pair && b.arrow === (arrow === 'DOWN' ? 'DOWN' : 'UP') && b.intervalMinutes === minutes;
                 if (!isSameKey) return true;
                 // Se abrir/fechar muito distante, mantém
                 const createdAtMs = extractCreatedAtMs(payload);
@@ -533,7 +611,8 @@ export default function Home() {
               const serverId = extractId(payload);
               const pair = (payload?.pair ?? moeda).toString();
               const arrow = String(payload?.arrow ?? '').toUpperCase() === 'DOWN' ? 'DOWN' : 'UP';
-              const betAmount = parseNumber(payload?.bet) ?? 0;
+              const betAmount = parseNumber(payload?.bet ?? payload?.amount) ?? 0;
+              const serverEntryPrice = parseNumber(payload?.starredPrice ?? payload?.entryPrice ?? payload?.entry_price);
               const minutes = extractIntervalMinutes(payload?.interval) ?? extractIntervalMinutes(tempo) ?? 1;
               const createdAt = extractCreatedAtMs(payload) ?? Date.now();
               const expiresAt = (() => {
@@ -541,19 +620,54 @@ export default function Home() {
                 if (Number.isFinite(explicit)) return explicit > 1e12 ? explicit : explicit * 1000;
                 return createdAt + minutes * 60_000;
               })();
+
               setActiveBets((prev) => {
-                // atualiza se existir por serverId
-                if (serverId != null) {
-                  const idx = prev.findIndex((b) => String(b.serverId) === String(serverId));
-                  if (idx >= 0) {
-                    const copy = prev.slice();
-                    copy[idx] = { ...copy[idx], pair, arrow, bet: betAmount, intervalMinutes: minutes, createdAt, expiresAt };
-                    return copy;
+                let updated = false;
+                // Find the most recently created unconfirmed bet for this pair+arrow (to match even 
+                // when client/server clocks differ)
+                const candidateLocalBet = prev
+                  .filter(b => b.serverId == null && normalizePair(b.pair) === normalizePair(pair) && b.arrow === arrow)
+                  .sort((a, b) => b.createdAt - a.createdAt)[0];
+                console.log('🟡 matching | prev.length:', prev.length, '| pair:', pair, '| arrow:', arrow, '| candidate:', candidateLocalBet?.id ?? 'NOT FOUND');
+
+                const next = prev.map((b) => {
+                  // Se já existe por serverId
+                  const isSameServer = serverId != null && b.serverId != null && String(b.serverId) === String(serverId);
+                  // Ou é a aposta local mais recente sem confirmação para este par/seta
+                  const isMatchingLocal = candidateLocalBet != null && b.id === candidateLocalBet.id;
+
+                  if (isSameServer || isMatchingLocal) {
+                    updated = true;
+                    let lineId = b.lineId;
+                    // Se recebemos o preço do servidor e ainda não tínhamos no gráfico, tentamos desenhar
+                    if (serverEntryPrice && !lineId && tvChartRef.current) {
+                      lineId = drawLineOnChart(tvChartRef.current, arrow as "UP" | "DOWN", serverEntryPrice);
+                    }
+
+                    return {
+                      ...b,
+                      pair,
+                      arrow: arrow as 'UP' | 'DOWN',
+                      bet: betAmount || b.bet,
+                      intervalMinutes: minutes,
+                      createdAt: createdAt || b.createdAt,
+                      expiresAt,
+                      serverId: serverId ?? b.serverId,
+                      entryPrice: serverEntryPrice ?? b.entryPrice,
+                      lineId
+                    };
                   }
+                  return b;
+                });
+
+                if (updated) return next;
+
+                // Nova aposta do servidor
+                let lineId: string | undefined;
+                if (serverEntryPrice && tvChartRef.current) {
+                  lineId = drawLineOnChart(tvChartRef.current, arrow as "UP" | "DOWN", serverEntryPrice);
                 }
-                // evita duplicar por chave aproximada
-                const exists = prev.some((b) => b.serverId == null && b.pair === pair && b.arrow === arrow && b.intervalMinutes === minutes && Math.abs(b.createdAt - createdAt) < 5_000);
-                if (exists) return prev;
+
                 const newItem: ActiveBet = {
                   id: `srv-${serverId ?? 'tmp'}-${createdAt}`,
                   serverId,
@@ -563,21 +677,51 @@ export default function Home() {
                   intervalMinutes: minutes,
                   createdAt,
                   expiresAt,
+                  entryPrice: serverEntryPrice ?? undefined,
+                  lineId
                 };
+
                 return [newItem, ...prev].slice(0, 50);
               });
             }
           }
-        } else {
-          console.debug("Bet update:", payload);
         }
       } catch (e) {
-        console.debug("Bet update (raw):", msg.body);
+        console.debug("Bet update error:", e);
       }
     });
     unsubscribeBetsRef.current = un;
     return () => { try { unsubscribeBetsRef.current?.(); } catch { } };
   }, [accountId, subscribe]);
+
+  // Função auxiliar para desenhar a linha no gráfico (sem efeitos colaterais de estado)
+  const drawLineOnChart = (chart: any, arrow: "UP" | "DOWN", price: number): string | undefined => {
+    try {
+      const lineColor = arrow === "UP" ? "#22c55e" : "#ef4444";
+      const currentTime = Math.floor(Date.now() / 1000);
+      return chart.createShape?.(
+        { time: currentTime, price },
+        {
+          shape: 'horizontal_line',
+          overrides: {
+            linecolor: lineColor,
+            linewidth: 2,
+            linestyle: 2,
+            showLabel: true,
+            textcolor: lineColor,
+          },
+          text: `${arrow === 'UP' ? 'COMPRA' : 'VENDA'} @ ${price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+          lock: true,
+          disableSelection: true,
+          disableSave: true,
+          disableUndo: true,
+        }
+      );
+    } catch (e) {
+      console.error('Erro ao desenhar linha:', e);
+      return undefined;
+    }
+  };
 
   const enviarAposta = (arrow: "UP" | "DOWN") => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -589,124 +733,14 @@ export default function Home() {
     const payload = { pair, bet, interval, arrow, token, demo: Boolean(isDemo) };
     send("/app/bet", JSON.stringify(payload));
 
-    // Adiciona localmente uma aposta ativa com contagem regressiva
+    // Adiciona localmente apenas para feedback imediato visual (o servidor confirmará depois)
     const createdAt = Date.now();
     const minutes = typeof tempo === 'number' ? tempo : 1;
     const expiresAt = createdAt + minutes * 60_000;
     const localId = `client-${createdAt}-${Math.random().toString(36).slice(2, 8)}`;
-
-    // Tenta desenhar a linha no gráfico
-    setTimeout(() => {
-      try {
-        const chart = tvChartRef.current;
-        if (!chart) {
-          console.warn('⚠️ Chart ainda não está pronto');
-          return;
-        }
-
-        console.log('📊 Tentando desenhar linha no chart:', chart);
-
-        // Tenta obter o preço atual usando diferentes métodos
-        let entryPrice: number | undefined;
-
-        // Método 1: Tentar obter via symbolInfo
-        try {
-          const symbolInfo = chart.symbolExt?.();
-          if (symbolInfo && symbolInfo.last_price) {
-            entryPrice = symbolInfo.last_price;
-            console.log('💰 Preço obtido via symbolInfo:', entryPrice);
-          }
-        } catch (e) {
-          console.debug('Método symbolInfo falhou:', e);
-        }
-
-        // Método 2: Tentar via onTick
-        if (!entryPrice) {
-          try {
-            const tickSubscription = chart.onTick?.().subscribe(null, (tick: any) => {
-              if (tick && typeof tick.lp === 'number') {
-                entryPrice = tick.lp;
-                console.log('💰 Preço obtido via onTick:', entryPrice);
-
-                // Desenha a linha
-                if (entryPrice) {
-                  drawLine(chart, arrow, entryPrice, localId);
-                }
-
-                // Cancela a inscrição
-                if (typeof tickSubscription === 'function') {
-                  tickSubscription();
-                }
-              }
-            });
-
-            // Se não receber tick em 2 segundos, cancela
-            setTimeout(() => {
-              if (typeof tickSubscription === 'function') {
-                tickSubscription();
-              }
-            }, 2000);
-
-            return; // Sai aqui pois o desenho será feito no callback do onTick
-          } catch (e) {
-            console.error('Método onTick falhou:', e);
-          }
-        }
-
-        // Se conseguiu obter o preço, desenha a linha
-        if (entryPrice) {
-          drawLine(chart, arrow, entryPrice, localId);
-        } else {
-          console.warn('⚠️ Não foi possível obter o preço atual');
-        }
-      } catch (error) {
-        console.error('❌ Erro ao desenhar linha:', error);
-      }
-    }, 100);
-
-    // Função auxiliar para desenhar a linha
-    function drawLine(chart: any, arrow: "UP" | "DOWN", price: number, betId: string) {
-      try {
-        const lineColor = arrow === "UP" ? "#22c55e" : "#ef4444";
-        const currentTime = Math.floor(Date.now() / 1000);
-
-        console.log('🎨 Desenhando linha:', { price, arrow, color: lineColor });
-
-        const lineId = chart.createShape?.(
-          { time: currentTime, price },
-          {
-            shape: 'horizontal_line',
-            overrides: {
-              linecolor: lineColor,
-              linewidth: 2,
-              linestyle: 2,
-              showLabel: true,
-              textcolor: lineColor,
-            },
-            text: `${arrow} @ ${price.toFixed(2)}`,
-            lock: true,
-            disableSelection: true,
-            disableSave: true,
-            disableUndo: true,
-          }
-        );
-
-        if (lineId) {
-          console.log('✅ Linha criada com sucesso! ID:', lineId);
-
-          // Atualiza a aposta com o preço e lineId
-          setActiveBets((prev) =>
-            prev.map((b) =>
-              b.id === betId ? { ...b, entryPrice: price, lineId } : b
-            )
-          );
-        } else {
-          console.warn('⚠️ createShape retornou undefined');
-        }
-      } catch (shapeError) {
-        console.error('❌ Erro ao criar shape:', shapeError);
-      }
-    }
+    // Captura o preço atual no momento do clique como entrada temporária
+    const normalizedPairNow = normalizePair(moeda);
+    const localEntryPrice = prices[normalizedPairNow] ?? undefined;
 
     setActiveBets((prev) => [
       {
@@ -717,9 +751,21 @@ export default function Home() {
         intervalMinutes: minutes,
         createdAt,
         expiresAt,
+        entryPrice: localEntryPrice,
       },
       ...prev,
     ]);
+  };
+
+  const cashout = (bet: ActiveBet) => {
+    if (!bet.serverId) {
+      toast.error("Operação ainda não confirmada no servidor");
+      return;
+    }
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (!token) return;
+
+    send("/app/cashout", JSON.stringify({ betId: bet.serverId, token }));
   };
 
   return (
@@ -923,17 +969,64 @@ export default function Home() {
                           const remSec = Math.floor(remainingMs / 1000);
                           const mm = String(Math.floor(remSec / 60)).padStart(2, '0');
                           const ss = String(remSec % 60).padStart(2, '0');
+
+                          const normalizedPair = normalizePair(b.pair || "");
+                          const currentPrice = prices[normalizedPair];
+                          // usa preço do servidor se confirmado, senão usa preço atual como fallback temporário
+                          const effectiveEntryPrice = b.entryPrice ?? currentPrice;
+                          // Fator de amplificação visual — as moedas se movem pouco em curtos períodos,
+                          // então multiplicamos para tornar o P/L mais expressivo na tela
+                          const PNL_DISPLAY_MULTIPLIER = 50;
+                          let pnlPercent = 0;
+                          let isWinning = false;
+
+                          if (currentPrice && effectiveEntryPrice) {
+                            if (b.arrow === 'UP') {
+                              isWinning = currentPrice > effectiveEntryPrice;
+                              pnlPercent = ((currentPrice - effectiveEntryPrice) / effectiveEntryPrice) * 100 * PNL_DISPLAY_MULTIPLIER;
+                            } else {
+                              isWinning = currentPrice < effectiveEntryPrice;
+                              pnlPercent = ((effectiveEntryPrice - currentPrice) / effectiveEntryPrice) * 100 * PNL_DISPLAY_MULTIPLIER;
+                            }
+                          }
+
                           return (
-                            <div key={b.id} className="flex items-center justify-between text-gray-200 text-sm">
-                              <div className="flex items-center gap-2">
-                                <span className={b.arrow === 'UP' ? 'text-green-400' : 'text-red-400'}>
-                                  {b.arrow === 'UP' ? '↑' : '↓'}
-                                </span>
-                                <span>{b.pair}</span>
-                                <span className="text-gray-400">{b.intervalMinutes}m</span>
-                                <span className="text-gray-400">{formatCurrencyBRL(b.bet)}</span>
+                            <div key={b.id} className="flex flex-col gap-1 border-b border-neutral-800 pb-2 last:border-0 last:pb-0">
+                              <div className="flex items-center justify-between text-gray-200 text-sm">
+                                <div className="flex items-center gap-2">
+                                  <span className={b.arrow === 'UP' ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
+                                    {b.arrow === 'UP' ? '↑' : '↓'}
+                                  </span>
+                                  <span>{b.pair}</span>
+                                  <span className="text-gray-400">{formatCurrencyBRL(b.bet)}</span>
+                                </div>
+                                <span className="font-mono text-xs bg-neutral-800 px-1.5 py-0.5 rounded text-gray-400">{mm}:{ss}</span>
                               </div>
-                              <span className="font-mono">{mm}:{ss}</span>
+                              <div className="flex items-center justify-between text-[10px]">
+                                <span className="text-gray-500">Entrada: {effectiveEntryPrice?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '--'}{b.entryPrice && !b.serverId ? ' ~' : ''}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className={isWinning ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
+                                    {isWinning ? '+' : ''}{pnlPercent.toFixed(2)}%
+                                  </span>
+                                  {(() => {
+                                    // Mesmo cálculo do backend: aposta ± aposta × pnlExibido%
+                                    const cashoutAmount = isWinning
+                                      ? b.bet + b.bet * (pnlPercent / 100)
+                                      : Math.max(0, b.bet - b.bet * (pnlPercent / 100));
+                                    return (
+                                      <button
+                                        onClick={() => cashout(b)}
+                                        className={`px-1.5 py-0.5 rounded text-[9px] transition border font-semibold ${isWinning
+                                          ? 'bg-green-900/40 hover:bg-green-800/60 text-green-300 border-green-700/50'
+                                          : 'bg-red-900/40 hover:bg-red-800/60 text-red-300 border-red-700/50'
+                                          }`}
+                                      >
+                                        {cashoutAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                      </button>
+                                    );
+                                  })()}
+                                </div>
+                              </div>
                             </div>
                           );
                         })}
@@ -1080,7 +1173,7 @@ export default function Home() {
               {activeBets.filter((b) => !b.closed && b.expiresAt > nowTs).length > 0 && (
                 <div className="mt-2 bg-neutral-900 rounded-md p-2">
                   <div className="text-gray-300 text-xs mb-1">Operações ativas</div>
-                  <div className="space-y-1">
+                  <div className="space-y-2">
                     {activeBets
                       .filter((b) => !b.closed && b.expiresAt > nowTs)
                       .sort((a, b) => a.expiresAt - b.expiresAt)
@@ -1089,17 +1182,60 @@ export default function Home() {
                         const remSec = Math.floor(remainingMs / 1000);
                         const mm = String(Math.floor(remSec / 60)).padStart(2, '0');
                         const ss = String(remSec % 60).padStart(2, '0');
+
+                        const normalizedPair = normalizePair(b.pair || '');
+                        const currentPrice = prices[normalizedPair];
+                        const effectiveEntryPrice = b.entryPrice ?? currentPrice;
+                        const PNL_DISPLAY_MULTIPLIER = 50;
+                        let pnlPercent = 0;
+                        let isWinning = false;
+
+                        if (currentPrice && effectiveEntryPrice) {
+                          if (b.arrow === 'UP') {
+                            isWinning = currentPrice > effectiveEntryPrice;
+                            pnlPercent = ((currentPrice - effectiveEntryPrice) / effectiveEntryPrice) * 100 * PNL_DISPLAY_MULTIPLIER;
+                          } else {
+                            isWinning = currentPrice < effectiveEntryPrice;
+                            pnlPercent = ((effectiveEntryPrice - currentPrice) / effectiveEntryPrice) * 100 * PNL_DISPLAY_MULTIPLIER;
+                          }
+                        }
+
+                        const cashoutAmount = isWinning
+                          ? b.bet + b.bet * (pnlPercent / 100)
+                          : Math.max(0, b.bet - b.bet * (pnlPercent / 100));
+
                         return (
-                          <div key={b.id} className="flex items-center justify-between text-gray-200 text-xs">
-                            <div className="flex items-center gap-2">
-                              <span className={b.arrow === 'UP' ? 'text-green-400' : 'text-red-400'}>
-                                {b.arrow === 'UP' ? '↑' : '↓'}
-                              </span>
-                              <span>{b.pair}</span>
-                              <span className="text-gray-400">{b.intervalMinutes}m</span>
-                              <span className="text-gray-400">{formatCurrencyBRL(b.bet)}</span>
+                          <div key={b.id} className="flex flex-col gap-1 border-b border-neutral-800 pb-2 last:border-0 last:pb-0">
+                            <div className="flex items-center justify-between text-gray-200 text-xs">
+                              <div className="flex items-center gap-2">
+                                <span className={b.arrow === 'UP' ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
+                                  {b.arrow === 'UP' ? '↑' : '↓'}
+                                </span>
+                                <span>{b.pair}</span>
+                                <span className="text-gray-400">{formatCurrencyBRL(b.bet)}</span>
+                              </div>
+                              <span className="font-mono text-xs bg-neutral-800 px-1.5 py-0.5 rounded text-gray-400">{mm}:{ss}</span>
                             </div>
-                            <span className="font-mono">{mm}:{ss}</span>
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="text-gray-500">
+                                Entrada: {effectiveEntryPrice?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '--'}
+                                {b.entryPrice && !b.serverId ? ' ~' : ''}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className={isWinning ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
+                                  {isWinning ? '+' : ''}{pnlPercent.toFixed(2)}%
+                                </span>
+                                <button
+                                  onClick={() => cashout(b)}
+                                  className={`px-1.5 py-0.5 rounded text-[9px] transition border font-semibold ${isWinning
+                                      ? 'bg-green-900/40 hover:bg-green-800/60 text-green-300 border-green-700/50'
+                                      : 'bg-red-900/40 hover:bg-red-800/60 text-red-300 border-red-700/50'
+                                    }`}
+                                >
+                                  {cashoutAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 })}
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         );
                       })}

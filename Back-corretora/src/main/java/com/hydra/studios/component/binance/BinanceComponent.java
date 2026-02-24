@@ -16,29 +16,33 @@ public class BinanceComponent {
 
     public List<Exchange> getAllPairs() {
         List<String> quoteAssets = Arrays.asList(
-                "USDT",   // Stablecoin mais usada
-                "USDC",   // Segunda em liquidez
-                "FDUSD",  // Muito usada na Binance
-                "DAI",    // Descentralizada
-                "TUSD",   // Bastante presente em pares
-                "BRL",    // Real brasileiro
-                "EUR",    // Euro
-                "BUSD"    // Ainda aparece em vários pares
+                "USDT", // Stablecoin mais usada
+                "USDC", // Segunda em liquidez
+                "FDUSD", // Muito usada na Binance
+                "DAI", // Descentralizada
+                "TUSD", // Bastante presente em pares
+                "BRL", // Real brasileiro
+                "EUR", // Euro
+                "BUSD" // Ainda aparece em vários pares
         );
 
         List<String> baseWhitelist = Arrays.asList(
-                "BTC",    // Bitcoin
-                "ETH",    // Ethereum
-                "BNB",    // Binance Coin
-                "SOL",    // Solana
-                "XRP",    // Ripple
-                "ADA",    // Cardano
-                "DOGE",   // Dogecoin
-                "MATIC",  // Polygon
-                "DOT",    // Polkadot
-                "LTC"     // Litecoin
+                "BTC", // Bitcoin
+                "ETH", // Ethereum
+                "BNB", // Binance Coin
+                "SOL", // Solana
+                "XRP", // Ripple
+                "ADA", // Cardano
+                "DOGE", // Dogecoin
+                "MATIC", // Polygon
+                "DOT", // Polkadot
+                "LTC", // Litecoin
+                "LINK", // Chainlink
+                "AVAX", // Avalanche
+                "SHIB", // Shiba Inu
+                "TRX", // TRON
+                "PEPE" // Pepe
         );
-
 
         List<Exchange> tradingPairs = new ArrayList<>();
 
@@ -60,7 +64,7 @@ public class BinanceComponent {
                     && baseWhitelist.contains(baseAsset)) {
 
                 Exchange pair = new Exchange();
-                pair.setExchange(baseAsset + quoteAsset);     // ex: BTCUSDT
+                pair.setExchange(baseAsset + quoteAsset); // ex: BTCUSDT
                 pair.setSymbol(baseAsset + "/" + quoteAsset); // ex: BTC/USDT
                 pair.setBaseAsset(baseAsset);
                 pair.setQuoteAsset(quoteAsset);
