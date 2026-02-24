@@ -18,7 +18,7 @@ services:
     environment:
       - MONGODB_URI=mongodb://mongodb:27017/trading
       - FRONTEND_URL=${FRONTEND_URL:-https://brokerblackpearl.com.br}
-      - API_URL=${API_URL:-https://brokerblackpearl.com.br/api}
+      - API_URL=${API_URL:-https://brokerblackpearl.com.br/server-api}
     depends_on:
       - mongodb
     networks:
@@ -28,7 +28,7 @@ services:
     build:
       context: ./Front-corretora
       args:
-        - NEXT_PUBLIC_API_URL=/api
+        - NEXT_PUBLIC_API_URL=/server-api
         - NEXT_PUBLIC_WS_URL=/ws
     container_name: frontend-next
     ports:
