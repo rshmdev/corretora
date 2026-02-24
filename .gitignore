@@ -1,0 +1,39 @@
+# Dependencies
+**/node_modules
+**/.pnp
+.pnp.*
+
+# Next.js
+**/Front-corretora/.next/
+**/Front-corretora/out/
+**/Front-corretora/build
+**/Front-corretora/next-env.d.ts
+*.tsbuildinfo
+
+# Java Maven
+**/Back-corretora/target/
+**/Back-corretora/*.jar
+**/Back-corretora/*.war
+
+# Environment files
+.env*
+**/Front-corretora/.env*
+**/Back-corretora/.env*
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# OS Files
+Thumbs.db
+desktop.ini
