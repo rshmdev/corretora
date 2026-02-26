@@ -12,8 +12,10 @@ import java.util.List;
 public interface BetRepository extends MongoRepository<Bet, String> {
 
     List<Bet> findALlByAccountId(String accountId);
+
     List<Bet> findALlByAccountIdAndDemo(String accountId, boolean demo);
-    List<Bet> findAllByFinishInBeforeAndFinishedPrice(long finishInBefore, double finishedPrice);
+
+    List<Bet> findAllByFinishInBeforeAndFinished(long finishInBefore, boolean finished);
 
     List<Bet> findAllByAccountIdAndFinished(String accountId, boolean finished);
 

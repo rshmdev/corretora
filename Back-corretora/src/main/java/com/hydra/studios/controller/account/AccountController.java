@@ -63,6 +63,13 @@ public class AccountController {
         var response = JsonParser.parseString(App.getGson().toJson(account)).getAsJsonObject();
 
         response.remove("password");
+        try {
+            var config = systemService.getSystem();
+            int winPercent = config != null ? config.getWinPercent() : 0;
+            if (winPercent <= 0) winPercent = 80;
+            response.addProperty("systemWinPercent", winPercent);
+        } catch (Exception ignored) {
+        }
 
         return App.getGson().toJson(ResponseModal.builder().status(true).data(response).build());
     }
@@ -320,7 +327,10 @@ public class AccountController {
     public String depositCallback(@PathVariable String transactionId, @RequestBody String requestBody) {
         var body = JsonParser.parseString(requestBody).getAsJsonObject();
 
-        System.out.println(body.toString());
+        System.out.println("[VeoPag] Deposit Callback received: " + body);
+
+        // VeoPag envia external_id; usamos o transactionId da URL (que foi enviado como
+        // external_id)
         var transaction = transactionService.getTransactionById(transactionId);
 
         if (transaction == null) {
@@ -332,11 +342,16 @@ public class AccountController {
                     .toJson(ResponseModal.builder().status(false).message("Transaction already verified").build());
         }
 
-        // Verifica formato TriboPay
-        // Verifica formato TriboPay
-        if (body.has("payment_status") && (body.get("payment_status").getAsString().equals("paid")
+        // Verifica status VeoPag ("COMPLETED") ou legado TriboPay ("paid" / "approved")
+        boolean isApproved = false;
+        if (body.has("status") && body.get("status").getAsString().equalsIgnoreCase("COMPLETED")) {
+            isApproved = true;
+        } else if (body.has("payment_status") && (body.get("payment_status").getAsString().equals("paid")
                 || body.get("payment_status").getAsString().equals("approved"))) {
+            isApproved = true;
+        }
 
+        if (isApproved) {
             var acc = accountService.getAccountById(transaction.getAccountId());
             var transactions = transactionService.getAllTransactionsByAccountId(acc.getId());
 
@@ -396,6 +411,7 @@ public class AccountController {
             }
 
             transaction.setStatus(TransactionStatus.APPROVED);
+            transaction.setUpdateAt(System.currentTimeMillis());
             acc.getWallet().setBalance(acc.getWallet().getBalance() + (transaction.getAmount()));
             acc.getWallet().setBonus(transaction.getBonus());
 
@@ -405,8 +421,47 @@ public class AccountController {
         }
 
         return App.getGson()
-                .toJson(ResponseModal.builder().status(true).message("Transaction successfully approved").build());
+                .toJson(ResponseModal.builder().status(true).message("Callback processed").build());
+    }
 
+    @PostMapping("/withdraw/{transactionId}/callback")
+    public String withdrawCallback(@PathVariable String transactionId, @RequestBody String requestBody) {
+        var body = JsonParser.parseString(requestBody).getAsJsonObject();
+
+        System.out.println("[VeoPag] Withdraw Callback received: " + body);
+
+        var transaction = transactionService.getTransactionById(transactionId);
+
+        if (transaction == null) {
+            return App.getGson().toJson(ResponseModal.builder().status(false).message("Transaction not found").build());
+        }
+
+        if (transaction.getStatus() != TransactionStatus.PENDING) {
+            return App.getGson()
+                    .toJson(ResponseModal.builder().status(false).message("Transaction already processed").build());
+        }
+
+        if (body.has("status") && body.get("status").getAsString().equalsIgnoreCase("COMPLETED")) {
+            transaction.setStatus(TransactionStatus.APPROVED);
+            transaction.setUpdateAt(System.currentTimeMillis());
+            transactionService.save(transaction);
+
+            System.out.println("[VeoPag] Saque " + transactionId + " confirmado como COMPLETED.");
+        } else if (body.has("status") && body.get("status").getAsString().equalsIgnoreCase("FAILED")) {
+            // Devolve o saldo ao usuário em caso de falha
+            var acc = accountService.getAccountById(transaction.getAccountId());
+            acc.getWallet().setBalance(acc.getWallet().getBalance() + transaction.getAmount());
+            transaction.setStatus(TransactionStatus.REJECTED);
+            transaction.setUpdateAt(System.currentTimeMillis());
+            transactionService.save(transaction);
+            accountService.save(acc);
+            accController.publish(acc.getId(), acc);
+
+            System.out.println("[VeoPag] Saque " + transactionId + " falhou. Saldo devolvido.");
+        }
+
+        return App.getGson()
+                .toJson(ResponseModal.builder().status(true).message("Withdraw callback processed").build());
     }
 
     @PostMapping("/withdraw")

@@ -3,7 +3,7 @@ package com.hydra.studios.controller.admin;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.hydra.studios.App;
-import com.hydra.studios.component.gateway.BsPayGateway;
+import com.hydra.studios.component.gateway.VeoPayGateway;
 import com.hydra.studios.controller.response.ResponseModal;
 import com.hydra.studios.model.account.role.AccountRole;
 import com.hydra.studios.model.transaction.status.TransactionStatus;
@@ -27,7 +27,7 @@ public class AdminController {
     private AccountService accountService;
 
     @Autowired
-    private BsPayGateway bsPayGateway;
+    private VeoPayGateway veoPayGateway;
 
     @GetMapping("/info")
     public String info() {
@@ -111,7 +111,6 @@ public class AdminController {
 
         var rs = systemService.getAccountDetail(id);
 
-
         return App.getGson().toJson(ResponseModal.builder().status(true).data(rs).build());
     }
 
@@ -132,7 +131,8 @@ public class AdminController {
     }
 
     @PostMapping("/transactions/withdrawal/{id}")
-    public String processWithdrawal(@AuthenticationPrincipal UserDetails userDetails, @PathVariable String id, @RequestBody String requestBody) {
+    public String processWithdrawal(@AuthenticationPrincipal UserDetails userDetails, @PathVariable String id,
+            @RequestBody String requestBody) {
         var account = accountService.getAccount(userDetails.getUsername());
         var body = JsonParser.parseString(requestBody).getAsJsonObject();
 
@@ -150,16 +150,27 @@ public class AdminController {
             return App.getGson().toJson(ResponseModal.builder().status(false).message("Transaction not found").build());
         }
         if (transaction.getType() != TransactionType.DEBIT) {
-            return App.getGson().toJson(ResponseModal.builder().status(false).message("Transaction is not a withdrawal").build());
+            return App.getGson()
+                    .toJson(ResponseModal.builder().status(false).message("Transaction is not a withdrawal").build());
         }
         if (!transaction.getStatus().equals(TransactionStatus.PENDING)) {
-            return App.getGson().toJson(ResponseModal.builder().status(false).message("Transaction already processed").build());
+            return App.getGson()
+                    .toJson(ResponseModal.builder().status(false).message("Transaction already processed").build());
         }
 
         if (action.equals("approve")) {
-            var res = bsPayGateway.createWithdrawal(transaction);
+            String pixKey = body.has("pixKey") ? body.get("pixKey").getAsString() : "";
+            String keyType = body.has("keyType") ? body.get("keyType").getAsString() : "CPF";
+
+            if (pixKey.isEmpty()) {
+                return App.getGson().toJson(ResponseModal.builder().status(false)
+                        .message("pixKey é obrigatória para aprovar o saque").build());
+            }
+
+            var res = veoPayGateway.createWithdrawal(transaction, pixKey, keyType);
             if (!res.get("status").getAsBoolean()) {
-                return App.getGson().toJson(ResponseModal.builder().status(false).message(res.get("message").getAsString()).build());
+                return App.getGson().toJson(
+                        ResponseModal.builder().status(false).message(res.get("message").getAsString()).build());
             }
 
             transaction.setStatus(TransactionStatus.APPROVED);
@@ -175,7 +186,8 @@ public class AdminController {
             accountService.save(acc);
         }
 
-        return App.getGson().toJson(ResponseModal.builder().status(true).message("Transaction processed").data(transaction).build());
+        return App.getGson().toJson(
+                ResponseModal.builder().status(true).message("Transaction processed").data(transaction).build());
     }
 
     @PostMapping("/settings/edit")
@@ -194,11 +206,13 @@ public class AdminController {
 
         systemService.edit(system, body);
 
-        return App.getGson().toJson(ResponseModal.builder().status(true).message("Settings Edited").data(system).build());
+        return App.getGson()
+                .toJson(ResponseModal.builder().status(true).message("Settings Edited").data(system).build());
     }
 
     @PostMapping("/accounts/edit/{id}")
-    public String editAccount(@AuthenticationPrincipal UserDetails userDetails, @RequestBody String requestBody, @PathVariable String id) {
+    public String editAccount(@AuthenticationPrincipal UserDetails userDetails, @RequestBody String requestBody,
+            @PathVariable String id) {
         var account = accountService.getAccount(userDetails.getUsername());
 
         if (account == null) {
@@ -233,7 +247,8 @@ public class AdminController {
 
         var acc = accountService.getAccountById(id);
         if (acc == null) {
-            return App.getGson().toJson(ResponseModal.builder().status(false).message("Account to delete not found").build());
+            return App.getGson()
+                    .toJson(ResponseModal.builder().status(false).message("Account to delete not found").build());
         }
 
         accountService.delete(acc);

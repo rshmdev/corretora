@@ -23,7 +23,7 @@ public class KlineSchedule {
     @Scheduled(fixedRate = 1000)
     public void closeBets() {
         var klines = binanceKlineService.getKlines();
-        var bets = betService.getBetsByFinishIn(System.currentTimeMillis(), 0);
+        var bets = betService.getBetsByFinishIn(System.currentTimeMillis());
 
         for (var bet : bets) {
             var kline = klines.get(bet.getPair());

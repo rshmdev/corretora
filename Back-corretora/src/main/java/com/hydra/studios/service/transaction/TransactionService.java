@@ -3,8 +3,7 @@ package com.hydra.studios.service.transaction;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.hydra.studios.App;
-import com.hydra.studios.component.gateway.BsPayGateway;
-import com.hydra.studios.component.gateway.TriboPayGateway;
+import com.hydra.studios.component.gateway.VeoPayGateway;
 import com.hydra.studios.model.account.Account;
 import com.hydra.studios.model.transaction.Transaction;
 import com.hydra.studios.model.transaction.status.TransactionStatus;
@@ -24,10 +23,7 @@ public class TransactionService {
     private TransactionRepository transactionRepository;
 
     @Autowired
-    private TriboPayGateway triboPayGateway;
-
-    @Autowired
-    private BsPayGateway bsPayGateway;
+    private VeoPayGateway veoPayGateway;
 
     public JsonObject createTransaction(Account account, double amount, double bonus) {
         var transaction = Transaction.builder()
@@ -43,18 +39,14 @@ public class TransactionService {
                 .updateAt(System.currentTimeMillis())
                 .build();
 
-        JsonObject obj;
-        try {
-            obj = triboPayGateway.createTransaction(transaction);
-        } catch (IOException e) {
-            e.printStackTrace();
-            obj = new JsonObject();
-            obj.addProperty("status", false);
-            obj.addProperty("message", "Erro interno ao comunicar com Gateway: " + e.getMessage());
-            return obj;
-        }
-
         transactionRepository.save(transaction);
+
+        JsonObject obj = veoPayGateway.createDeposit(transaction);
+
+        if (obj.has("status") && obj.get("status").getAsBoolean()) {
+            // Salva novamente com qrcode e reference preenchidos pelo gateway
+            transactionRepository.save(transaction);
+        }
 
         return obj;
     }

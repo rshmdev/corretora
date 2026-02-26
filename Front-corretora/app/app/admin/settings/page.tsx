@@ -68,6 +68,7 @@ export default function SettingsPage() {
       description,
       logo,
       favicon,
+      winPercent: winPercent === '' ? 0 : Number(winPercent),
       transaction: {
         minDeposit: minDeposit === '' ? 0 : Number(minDeposit),
         minWithdraw: minWithdraw === '' ? 0 : Number(minWithdraw),

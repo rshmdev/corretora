@@ -1,5 +1,6 @@
 "use client"
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import TradingChart, { ChartMarker, LiveCandle } from "@/components/traderoom/TradingChart";
 import { Wallet, FlaskConical } from "lucide-react";
 import HeaderApp from "@/components/platform/headerapp";
 import SidebarApp from "@/components/platform/sidebarapp";
@@ -89,106 +90,13 @@ export default function Home() {
   // Investimento e tempo
   const [investimento, setInvestimento] = useState<number | "">("");
   const [tempo, setTempo] = useState<number | "">(1);
-  // Supondo um retorno fixo de 80% para exemplo
-  const retornoPercentual = 0.8;
+  const PNL_DISPLAY_MULTIPLIER = 50;
 
   // Busca o objeto da moeda selecionada
   const moedaSelecionada = CRYPTOS.find((c) => c.value === moeda) || CRYPTOS[0];
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const init = () => {
-      const container = document.getElementById("tradingview_chart");
-      if (!container) return;
-      container.innerHTML = "";
-
-      // @ts-ignore
-      const tvWidget = new window.TradingView.widget({
-        container_id: "tradingview_chart",
-        autosize: true,
-        symbol: moedaSelecionada.value.replace("/", ""),
-        interval: "1",
-        timezone: "Etc/UTC",
-        theme: "dark",
-        style: "1",
-        locale: "br",
-        hide_top_toolbar: true,
-        hide_side_toolbar: true,
-        allow_symbol_change: false,
-        hide_legend: true,
-        withdateranges: false,
-        studies: [],
-        overrides: {
-          "paneProperties.background": "#0b0e11",
-          "paneProperties.vertGridProperties.color": "#0b0e11",
-          "paneProperties.horzGridProperties.color": "#0b0e11",
-          "paneProperties.legendProperties.showLegend": false,
-          "scalesProperties.lineColor": "#46515e",
-          "scalesProperties.textColor": "#9aa4b0",
-          "mainSeriesProperties.candleStyle.upColor": "#22ab94",
-          "mainSeriesProperties.candleStyle.downColor": "#f44336",
-          "mainSeriesProperties.candleStyle.borderUpColor": "#22ab94",
-          "mainSeriesProperties.candleStyle.borderDownColor": "#f44336",
-          "mainSeriesProperties.candleStyle.wickUpColor": "#22ab94",
-          "mainSeriesProperties.candleStyle.wickDownColor": "#f44336",
-          "mainSeriesProperties.candleStyle.barColorsOnPrevClose": false,
-        },
-      });
-      tvWidgetRef.current = tvWidget;
-      try {
-        // @ts-ignore
-        if (tvWidget && typeof tvWidget.onChartReady === 'function') {
-          // @ts-ignore
-          tvWidget.onChartReady(() => {
-            // Armazena a referência do chart quando estiver pronto
-            try {
-              // @ts-ignore
-              const chart = typeof tvWidget.chart === 'function' ? tvWidget.chart() : (typeof tvWidget.activeChart === 'function' ? tvWidget.activeChart() : null);
-              if (chart) {
-                tvChartRef.current = chart;
-                console.log('✅ Chart pronto e armazenado:', chart);
-              }
-            } catch (e) {
-              console.error('Erro ao obter chart:', e);
-            }
-
-            if (typeof window !== "undefined" && window.innerWidth < 768 && !zoomAppliedRef.current) {
-              zoomAppliedRef.current = true;
-              try {
-                // @ts-ignore
-                const chart = typeof tvWidget.chart === 'function' ? tvWidget.chart() : (typeof tvWidget.activeChart === 'function' ? tvWidget.activeChart() : null);
-                if (chart && typeof chart.executeActionById === 'function') {
-                  const steps = 6;
-                  for (let i = 0; i < steps; i++) {
-                    setTimeout(() => {
-                      try { chart.executeActionById('chartZoomIn'); } catch { }
-                    }, 120 * i);
-                  }
-                }
-              } catch { }
-            }
-          });
-        }
-      } catch { }
-    };
-
-    if (!(window as any).TradingView) {
-      const script = document.createElement("script");
-      script.id = "tv-widget-script";
-      script.src = "https://s3.tradingview.com/tv.js";
-      script.async = true;
-      script.onload = init;
-      document.head.appendChild(script);
-    } else {
-      init();
-    }
-
-    return () => {
-      const container = document.getElementById("tradingview_chart");
-      if (container) container.innerHTML = "";
-    };
-  }, [moedaSelecionada.tradingViewSymbol]);
+  // liveCandle — alimentado pelo WebSocket de klines
+  const [liveCandle, setLiveCandle] = useState<LiveCandle | null>(null);
 
   // Inicializa e observa o modo Demo/Real
   useEffect(() => {
@@ -220,17 +128,23 @@ export default function Home() {
   };
 
   // Calcula o possível retorno
+  const { send, subscribe } = useWs();
+  const { account, refreshAccount } = useAccount();
+  const unsubscribeBetsRef = useRef<(() => void) | null>(null);
+
+  const systemWinPercent = useMemo(() => {
+    const fromAccount = (account as any)?.systemWinPercent;
+    const parsed = Number(fromAccount);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    return 80;
+  }, [account]);
+
+  const retornoPercentual = systemWinPercent / 100;
+
   const possivelRetorno =
     investimento && !isNaN(Number(investimento))
       ? Number(investimento) + Number(investimento) * retornoPercentual
       : 0;
-
-  const { send, subscribe } = useWs();
-  const { account } = useAccount();
-  const unsubscribeBetsRef = useRef<(() => void) | null>(null);
-  const zoomAppliedRef = useRef<boolean>(false);
-  const tvWidgetRef = useRef<any>(null);
-  const tvChartRef = useRef<any>(null); // Referência ao chart pronto
 
   type ActiveBet = {
     id: string;
@@ -242,8 +156,9 @@ export default function Home() {
     expiresAt: number; // epoch ms
     closed?: boolean;
     serverId?: string | number | null;
-    entryPrice?: number; // Preço de entrada da operação
-    lineId?: string; // ID da linha desenhada no gráfico
+    entryPrice?: number;
+    lineId?: string;
+    closedAt?: number; // Timestamp de quando a aposta foi fechada no servidor
   };
 
   function normalizePair(p: string): string {
@@ -319,7 +234,7 @@ export default function Home() {
     return () => unsubscribers.forEach(un => un());
   }, [activeBets, subscribe]);
 
-  // Subscreve ao preço do par atualmente selecionado para ter o preço pronto no momento da aposta
+  // Subscreve ao preço do par atualmente selecionado — também alimenta o liveCandle do chart
   useEffect(() => {
     if (!moeda) return;
     const pair = normalizePair(moeda);
@@ -329,50 +244,23 @@ export default function Home() {
         const payload = JSON.parse(msg.body);
         if (payload && payload.close) {
           setPrices(prev => ({ ...prev, [pair]: payload.close }));
+          // Alimenta o gráfico lightweight com a vela ao vivo
+          if (payload.open && payload.high && payload.low && payload.close && payload.openTime) {
+            setLiveCandle({
+              time: Number(payload.openTime),
+              open: Number(payload.open),
+              high: Number(payload.high),
+              low: Number(payload.low),
+              close: Number(payload.close),
+            });
+          }
         }
       } catch (e) { }
     });
+    // Reseta o liveCandle ao trocar de moeda
+    setLiveCandle(null);
     return () => un?.();
   }, [moeda, subscribe]);
-
-  useEffect(() => {
-    // Remove expiradas e fechadas
-    setActiveBets((prev) => {
-      const toRemove = prev.filter((b) => b.closed || b.expiresAt <= nowTs);
-
-      // Se não há apostas para remover, retorna o estado anterior sem mudanças
-      if (toRemove.length === 0) return prev;
-
-      // Remove as linhas do gráfico
-      if (tvWidgetRef.current && toRemove.length > 0) {
-        try {
-          const chart = typeof tvWidgetRef.current.chart === 'function'
-            ? tvWidgetRef.current.chart()
-            : (typeof tvWidgetRef.current.activeChart === 'function'
-              ? tvWidgetRef.current.activeChart()
-              : null);
-          if (chart) {
-            toRemove.forEach((bet) => {
-              if (bet.lineId) {
-                try {
-                  chart.removeEntity(bet.lineId);
-                } catch (e) {
-                  console.debug('Erro ao remover linha:', e);
-                }
-              }
-            });
-          }
-        } catch (e) {
-          console.debug('Erro ao acessar chart:', e);
-        }
-      }
-
-      // Retorna apenas apostas válidas (não fechadas e não expiradas)
-      const validBets = prev.filter((b) => !b.closed && b.expiresAt > nowTs);
-      console.log(`🗑️ Removendo ${toRemove.length} aposta(s) expirada(s)/fechada(s)`);
-      return validBets;
-    });
-  }, [nowTs]);
 
   function getAccountId(source: Record<string, any> | null | undefined): string | null {
     if (!source) return null;
@@ -387,6 +275,61 @@ export default function Home() {
   }
 
   const accountId = useMemo(() => getAccountId(account as any), [account]);
+
+  // Listener para resultados de apostas vindos do servidor
+  useEffect(() => {
+    if (!accountId) return;
+
+    const destination = `/topic/bets/${accountId}`;
+    const un = subscribe(destination, (msg) => {
+      try {
+        const payload = JSON.parse(msg.body);
+        console.log('📬 Mensagem de bet recebida:', payload);
+
+        // Se for um objeto de aposta finalizada
+        if (payload.id && (payload.status === 'WIN' || payload.status === 'LOSE' || payload.finished)) {
+          const betId = payload.id;
+
+          setActiveBets(prev => prev.map(b => {
+            if (b.id === betId || b.serverId === betId) {
+              return { ...b, closed: true, serverId: betId, closedAt: Date.now() };
+            }
+            return b;
+          }));
+        }
+
+        // Se for uma confirmação de criação de aposta (apenas para vincular o serverId)
+        if (payload.id && !payload.finished && !payload.status) {
+          setActiveBets(prev => {
+            const index = prev.findIndex(b => b.id.startsWith('client-') && !b.serverId);
+            if (index !== -1) {
+              const newBets = [...prev];
+              newBets[index] = { ...newBets[index], serverId: payload.id };
+              return newBets;
+            }
+            return prev;
+          });
+        }
+      } catch (e) {
+        console.error('Erro ao processar mensagem de bet:', e);
+      }
+    });
+
+    return () => un?.();
+  }, [accountId, subscribe, refreshAccount]);
+
+  // Cleanup effect: remove closed bets after 4 seconds
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setActiveBets(prev => {
+        const now = Date.now();
+        const toRemove = prev.filter(b => b.closed && b.closedAt && now - b.closedAt > 4000);
+        if (toRemove.length === 0) return prev;
+        return prev.filter(b => !toRemove.includes(b));
+      });
+    }, 2000);
+    return () => clearInterval(iv);
+  }, []);
 
   function parseNumber(value: any): number | null {
     const n = Number(value);
@@ -454,14 +397,21 @@ export default function Home() {
   }
 
   function extractProfit(payload: any): number | null {
-    const directKeys = ['result', 'profit', 'pnl', 'pnlValue', 'net', 'netProfit'];
-    for (const k of directKeys) {
+    // Priorizamos o campo 'profit' que agora o backend envia explicitamente
+    const profitKeys = ['profit', 'pnl', 'pnlValue', 'net', 'netProfit'];
+    for (const k of profitKeys) {
       const v = parseNumber(payload?.[k]);
       if (v !== null) return v;
     }
+
+    // Se não houver 'profit', tentamos calcular a partir do payout (result) e do stake (bet)
     const betAmount = parseNumber(payload?.bet ?? payload?.amount ?? payload?.stake);
-    const payout = parseNumber(payload?.payout ?? payload?.return ?? payload?.payoutAmount ?? payload?.received ?? payload?.gross);
-    if (betAmount !== null && payout !== null) return payout - betAmount;
+    const payout = parseNumber(payload?.result ?? payload?.payout ?? payload?.return ?? payload?.gross);
+
+    if (betAmount !== null && payout !== null) {
+      return payout - betAmount;
+    }
+
     return null;
   }
 
@@ -482,6 +432,47 @@ export default function Home() {
   function formatCurrencyBRL(value: number | null | undefined): string {
     if (value == null || !Number.isFinite(Number(value))) return '--';
     return `R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+  }
+
+  function clamp(value: number, min: number, max: number): number {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function computeDisplayPnlPercent(entryPrice: number, currentPrice: number): number {
+    if (!entryPrice || !currentPrice) return 0;
+    const realPnlPercent = Math.abs((currentPrice - entryPrice) / entryPrice) * 100;
+    return realPnlPercent * PNL_DISPLAY_MULTIPLIER;
+  }
+
+  function computeCashoutAmount(
+    bet: ActiveBet,
+    currentPrice: number | undefined,
+    winPercent: number,
+    nowMs: number
+  ): number | null {
+    if (!currentPrice || !bet.entryPrice) return null;
+    const displayPnlPercent = computeDisplayPnlPercent(bet.entryPrice, currentPrice);
+    const totalTime = bet.expiresAt - bet.createdAt;
+    const remainingTime = bet.expiresAt - nowMs;
+    const timeProgress = totalTime > 0 ? clamp(1 - remainingTime / totalTime, 0, 1) : 1;
+    const cappedWinPercent = Math.max(0, winPercent);
+
+    const isWinning =
+      (bet.arrow === 'UP' && currentPrice > bet.entryPrice) ||
+      (bet.arrow === 'DOWN' && currentPrice < bet.entryPrice);
+
+    if (isWinning) {
+      const cappedDisplay = Math.min(displayPnlPercent, cappedWinPercent);
+      const movePayout = bet.bet + bet.bet * (cappedDisplay / 100);
+      const fullPayout = bet.bet + bet.bet * (cappedWinPercent / 100);
+      const payout = movePayout + (fullPayout - movePayout) * timeProgress;
+      return Math.max(0, payout);
+    }
+
+    let payout = Math.max(0, bet.bet - bet.bet * (displayPnlPercent / 100));
+    const timeFactor = totalTime > 0 ? clamp(remainingTime / totalTime, 0, 1) : 0;
+    payout = payout * Math.max(0.01, timeFactor);
+    return Math.max(0, payout);
   }
 
   function buildBetToastMessage(payload: any, profit: number | null, result: 'win' | 'loss' | 'draw' | null): string {
@@ -606,6 +597,7 @@ export default function Home() {
               } else {
                 toast.info(message);
               }
+              try { refreshAccount(); } catch { }
             } else {
               // Aposta aberta/atualização: mantém/insere na lista de ativas
               const serverId = extractId(payload);
@@ -638,12 +630,6 @@ export default function Home() {
 
                   if (isSameServer || isMatchingLocal) {
                     updated = true;
-                    let lineId = b.lineId;
-                    // Se recebemos o preço do servidor e ainda não tínhamos no gráfico, tentamos desenhar
-                    if (serverEntryPrice && !lineId && tvChartRef.current) {
-                      lineId = drawLineOnChart(tvChartRef.current, arrow as "UP" | "DOWN", serverEntryPrice);
-                    }
-
                     return {
                       ...b,
                       pair,
@@ -654,7 +640,6 @@ export default function Home() {
                       expiresAt,
                       serverId: serverId ?? b.serverId,
                       entryPrice: serverEntryPrice ?? b.entryPrice,
-                      lineId
                     };
                   }
                   return b;
@@ -663,11 +648,6 @@ export default function Home() {
                 if (updated) return next;
 
                 // Nova aposta do servidor
-                let lineId: string | undefined;
-                if (serverEntryPrice && tvChartRef.current) {
-                  lineId = drawLineOnChart(tvChartRef.current, arrow as "UP" | "DOWN", serverEntryPrice);
-                }
-
                 const newItem: ActiveBet = {
                   id: `srv-${serverId ?? 'tmp'}-${createdAt}`,
                   serverId,
@@ -678,7 +658,6 @@ export default function Home() {
                   createdAt,
                   expiresAt,
                   entryPrice: serverEntryPrice ?? undefined,
-                  lineId
                 };
 
                 return [newItem, ...prev].slice(0, 50);
@@ -692,36 +671,28 @@ export default function Home() {
     });
     unsubscribeBetsRef.current = un;
     return () => { try { unsubscribeBetsRef.current?.(); } catch { } };
-  }, [accountId, subscribe]);
+  }, [accountId, subscribe, refreshAccount]);
 
-  // Função auxiliar para desenhar a linha no gráfico (sem efeitos colaterais de estado)
-  const drawLineOnChart = (chart: any, arrow: "UP" | "DOWN", price: number): string | undefined => {
-    try {
-      const lineColor = arrow === "UP" ? "#22c55e" : "#ef4444";
-      const currentTime = Math.floor(Date.now() / 1000);
-      return chart.createShape?.(
-        { time: currentTime, price },
-        {
-          shape: 'horizontal_line',
-          overrides: {
-            linecolor: lineColor,
-            linewidth: 2,
-            linestyle: 2,
-            showLabel: true,
-            textcolor: lineColor,
-          },
-          text: `${arrow === 'UP' ? 'COMPRA' : 'VENDA'} @ ${price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
-          lock: true,
-          disableSelection: true,
-          disableSave: true,
-          disableUndo: true,
-        }
-      );
-    } catch (e) {
-      console.error('Erro ao desenhar linha:', e);
-      return undefined;
-    }
-  };
+  // Monta os marcadores para o TradingChart a partir das apostas ativas com entryPrice conhecido
+  const chartMarkers: ChartMarker[] = useMemo(() =>
+    activeBets
+      .filter(b => !b.closed && b.expiresAt > nowTs && b.entryPrice != null)
+      .map(b => {
+        const normalizedPair = normalizePair(b.pair || '');
+        const currentPrice = prices[normalizedPair];
+        const effectiveEntryPrice = b.entryPrice!;
+        const cashoutAmount = computeCashoutAmount(b, currentPrice, systemWinPercent, nowTs);
+
+        return {
+          id: b.id,
+          time: Math.floor(b.createdAt / 1000) as import('lightweight-charts').UTCTimestamp,
+          arrow: b.arrow,
+          price: b.entryPrice!,
+          betAmount: b.bet,
+          cashoutAmount: currentPrice ? cashoutAmount ?? undefined : undefined,
+        };
+      }),
+    [activeBets, nowTs, prices, systemWinPercent]);
 
   const enviarAposta = (arrow: "UP" | "DOWN") => {
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -781,22 +752,16 @@ export default function Home() {
           className="flex-1 min-h-[calc(100vh-64px)] md:ml-24"
         >
           <div className="flex h-[calc(100vh-64px)] w-full">
-            {/* Gráfico de operações centralizado */}
-            <div className="flex-1 flex items-center justify-center bg-neutral-950">
-              <div className="w-full h-[100%] flex items-center justify-center">
-                <div
-                  id="tradingview_chart"
-                  className="h-full w-full"
-                  style={{
-                    minHeight: 480,
-                    background: "#18181b",
-                    border: "none",
-                  }}
-                />
-              </div>
+            {/* Gráfico lightweight-charts com marcadores de operações */}
+            <div className="flex-1 bg-neutral-950" style={{ minHeight: 480 }}>
+              <TradingChart
+                symbol={moedaSelecionada.value.replace("/", "")}
+                liveCandle={liveCandle}
+                markers={chartMarkers}
+              />
             </div>
 
-            <div className="hidden md:flex w-[340px] min-w-[300px] max-w-[400px] bg-background border-l border-neutral-800 flex-col justify-between p-6">
+            <div className="hidden md:flex w-[340px] min-w-[300px] max-w-[400px] bg-background border-l border-neutral-800 flex-col p-6 overflow-y-auto">
               <div>
                 <h2 className="text-xl font-semibold text-white mb-6">
                   Negociação
@@ -860,11 +825,100 @@ export default function Home() {
                     </SelectContent>
                   </Select>
                 </div>
-                {/* Mostra a moeda selecionada */}
+                {/* Operações ativas (desktop) — logo abaixo do select */}
+                {activeBets.filter((b) => !b.closed && b.expiresAt > nowTs).length > 0 && (
+                  <div className="mt-3 mb-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-gray-400 text-xs font-medium uppercase tracking-wider">Operações ativas</span>
+                      <span className="text-xs text-gray-500 bg-neutral-800 px-2 py-0.5 rounded-full">
+                        {activeBets.filter((b) => !b.closed && b.expiresAt > nowTs).length}
+                      </span>
+                    </div>
+                    <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
+                      {activeBets
+                        .filter((b) => !b.closed && b.expiresAt > nowTs)
+                        .sort((a, b) => a.expiresAt - b.expiresAt)
+                        .map((b) => {
+                          const remainingMs = Math.max(0, b.expiresAt - nowTs);
+                          const remSec = Math.floor(remainingMs / 1000);
+                          const mm = String(Math.floor(remSec / 60)).padStart(2, '0');
+                          const ss = String(remSec % 60).padStart(2, '0');
+                          const normalizedPair = normalizePair(b.pair || '');
+                          const currentPrice = prices[normalizedPair];
+                          const effectiveEntryPrice = b.entryPrice ?? currentPrice;
+                          let pnlPercent = 0;
+                          let isWinning = false;
+                          if (currentPrice && effectiveEntryPrice) {
+                            isWinning = b.arrow === 'UP' ? currentPrice > effectiveEntryPrice : currentPrice < effectiveEntryPrice;
+                            pnlPercent = computeDisplayPnlPercent(effectiveEntryPrice, currentPrice);
+                          }
+                          const cashoutAmount = computeCashoutAmount(b, currentPrice, systemWinPercent, nowTs) ?? b.bet;
+
+                          return (
+                            <div
+                              key={b.id}
+                              className={`rounded-xl border p-3 flex flex-col gap-2 ${isWinning
+                                ? 'bg-green-950/30 border-green-700/40'
+                                : 'bg-red-950/30 border-red-700/40'
+                                }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-lg font-bold leading-none ${b.arrow === 'UP' ? 'text-green-400' : 'text-red-400'
+                                    }`}>
+                                    {b.arrow === 'UP' ? '▲' : '▼'}
+                                  </span>
+                                  <div className="flex flex-col">
+                                    <span className="text-white font-semibold text-sm leading-tight">{b.pair}</span>
+                                    <span className="text-gray-400 text-xs">{b.arrow === 'UP' ? 'Compra' : 'Venda'}</span>
+                                  </div>
+                                </div>
+                                <div className="flex flex-col items-end gap-0.5">
+                                  <span className={`font-mono text-sm font-bold tabular-nums ${remSec < 30 ? 'text-yellow-400 animate-pulse' : 'text-gray-300'
+                                    }`}>{mm}:{ss}</span>
+                                  <span className="text-gray-500 text-[10px]">restante</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between bg-neutral-900/60 rounded-lg px-3 py-2">
+                                <div className="flex flex-col">
+                                  <span className="text-gray-500 text-[10px] uppercase tracking-wide">Entrada</span>
+                                  <span className="text-white text-sm font-mono font-semibold">
+                                    {effectiveEntryPrice
+                                      ? effectiveEntryPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                      : '--'}
+                                    {b.entryPrice && !b.serverId ? <span className="text-yellow-500 ml-1 text-[9px]">~</span> : null}
+                                  </span>
+                                </div>
+                                <div className="flex flex-col items-end">
+                                  <span className="text-gray-500 text-[10px] uppercase tracking-wide">P&L</span>
+                                  <span className={`text-sm font-bold ${isWinning ? 'text-green-400' : 'text-red-400'
+                                    }`}>
+                                    {isWinning ? '+' : ''}{pnlPercent.toFixed(2)}%
+                                  </span>
+                                </div>
+                                <div className="flex flex-col items-end">
+                                  <span className="text-gray-500 text-[10px] uppercase tracking-wide">Apostado</span>
+                                  <span className="text-white text-sm font-semibold">{formatCurrencyBRL(b.bet)}</span>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => cashout(b)}
+                                className={`w-full py-2.5 rounded-lg font-bold text-sm transition-all active:scale-95 shadow-lg ${isWinning
+                                  ? 'bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 text-white shadow-green-900/40'
+                                  : 'bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-400 hover:to-rose-400 text-white shadow-red-900/40'
+                                  }`}
+                              >
+                                💰 Cashout — {cashoutAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              </button>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+                {/* Moeda selecionada */}
                 <div className="mb-4 flex items-center">
-                  <span className="text-gray-400 text-sm">
-                    Moeda selecionada:
-                  </span>
+                  <span className="text-gray-400 text-sm">Moeda selecionada:</span>
                   <span className="ml-2 flex items-center font-bold text-white">
                     <img
                       src={moedaSelecionada.icon}
@@ -938,7 +992,7 @@ export default function Home() {
                         : "--"}
                     </span>
                     <span className="text-xs text-gray-400">
-                      Retorno estimado de 80%
+                      Retorno estimado de {systemWinPercent}%
                     </span>
                   </div>
                   <button
@@ -956,83 +1010,6 @@ export default function Home() {
                     Vender
                   </button>
                 </form>
-                {/* Operações ativas (desktop) */}
-                {activeBets.filter((b) => !b.closed && b.expiresAt > nowTs).length > 0 && (
-                  <div className="mt-4 bg-neutral-900 rounded-md p-3">
-                    <div className="text-gray-300 text-sm mb-2">Operações ativas</div>
-                    <div className="space-y-2">
-                      {activeBets
-                        .filter((b) => !b.closed && b.expiresAt > nowTs)
-                        .sort((a, b) => a.expiresAt - b.expiresAt)
-                        .map((b) => {
-                          const remainingMs = Math.max(0, b.expiresAt - nowTs);
-                          const remSec = Math.floor(remainingMs / 1000);
-                          const mm = String(Math.floor(remSec / 60)).padStart(2, '0');
-                          const ss = String(remSec % 60).padStart(2, '0');
-
-                          const normalizedPair = normalizePair(b.pair || "");
-                          const currentPrice = prices[normalizedPair];
-                          // usa preço do servidor se confirmado, senão usa preço atual como fallback temporário
-                          const effectiveEntryPrice = b.entryPrice ?? currentPrice;
-                          // Fator de amplificação visual — as moedas se movem pouco em curtos períodos,
-                          // então multiplicamos para tornar o P/L mais expressivo na tela
-                          const PNL_DISPLAY_MULTIPLIER = 50;
-                          let pnlPercent = 0;
-                          let isWinning = false;
-
-                          if (currentPrice && effectiveEntryPrice) {
-                            if (b.arrow === 'UP') {
-                              isWinning = currentPrice > effectiveEntryPrice;
-                              pnlPercent = ((currentPrice - effectiveEntryPrice) / effectiveEntryPrice) * 100 * PNL_DISPLAY_MULTIPLIER;
-                            } else {
-                              isWinning = currentPrice < effectiveEntryPrice;
-                              pnlPercent = ((effectiveEntryPrice - currentPrice) / effectiveEntryPrice) * 100 * PNL_DISPLAY_MULTIPLIER;
-                            }
-                          }
-
-                          return (
-                            <div key={b.id} className="flex flex-col gap-1 border-b border-neutral-800 pb-2 last:border-0 last:pb-0">
-                              <div className="flex items-center justify-between text-gray-200 text-sm">
-                                <div className="flex items-center gap-2">
-                                  <span className={b.arrow === 'UP' ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
-                                    {b.arrow === 'UP' ? '↑' : '↓'}
-                                  </span>
-                                  <span>{b.pair}</span>
-                                  <span className="text-gray-400">{formatCurrencyBRL(b.bet)}</span>
-                                </div>
-                                <span className="font-mono text-xs bg-neutral-800 px-1.5 py-0.5 rounded text-gray-400">{mm}:{ss}</span>
-                              </div>
-                              <div className="flex items-center justify-between text-[10px]">
-                                <span className="text-gray-500">Entrada: {effectiveEntryPrice?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '--'}{b.entryPrice && !b.serverId ? ' ~' : ''}</span>
-                                <div className="flex items-center gap-2">
-                                  <span className={isWinning ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
-                                    {isWinning ? '+' : ''}{pnlPercent.toFixed(2)}%
-                                  </span>
-                                  {(() => {
-                                    // Mesmo cálculo do backend: aposta ± aposta × pnlExibido%
-                                    const cashoutAmount = isWinning
-                                      ? b.bet + b.bet * (pnlPercent / 100)
-                                      : Math.max(0, b.bet - b.bet * (pnlPercent / 100));
-                                    return (
-                                      <button
-                                        onClick={() => cashout(b)}
-                                        className={`px-1.5 py-0.5 rounded text-[9px] transition border font-semibold ${isWinning
-                                          ? 'bg-green-900/40 hover:bg-green-800/60 text-green-300 border-green-700/50'
-                                          : 'bg-red-900/40 hover:bg-red-800/60 text-red-300 border-red-700/50'
-                                          }`}
-                                      >
-                                        {cashoutAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                      </button>
-                                    );
-                                  })()}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
             {/* Mobile (menu inferior fixo) */}
@@ -1170,10 +1147,15 @@ export default function Home() {
                 </div>
               </form>
               {/* Operações ativas (mobile) */}
-              {activeBets.filter((b) => !b.closed && b.expiresAt > nowTs).length > 0 && (
-                <div className="mt-2 bg-neutral-900 rounded-md p-2">
-                  <div className="text-gray-300 text-xs mb-1">Operações ativas</div>
-                  <div className="space-y-2">
+              {
+                activeBets.filter((b) => !b.closed && b.expiresAt > nowTs).length > 0 && (
+                  <div className="mt-2 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-400 text-[10px] font-medium uppercase tracking-wider">Operações ativas</span>
+                      <span className="text-[10px] text-gray-500 bg-neutral-800 px-1.5 py-0.5 rounded-full">
+                        {activeBets.filter((b) => !b.closed && b.expiresAt > nowTs).length}
+                      </span>
+                    </div>
                     {activeBets
                       .filter((b) => !b.closed && b.expiresAt > nowTs)
                       .sort((a, b) => a.expiresAt - b.expiresAt)
@@ -1182,70 +1164,83 @@ export default function Home() {
                         const remSec = Math.floor(remainingMs / 1000);
                         const mm = String(Math.floor(remSec / 60)).padStart(2, '0');
                         const ss = String(remSec % 60).padStart(2, '0');
-
                         const normalizedPair = normalizePair(b.pair || '');
                         const currentPrice = prices[normalizedPair];
                         const effectiveEntryPrice = b.entryPrice ?? currentPrice;
-                        const PNL_DISPLAY_MULTIPLIER = 50;
                         let pnlPercent = 0;
                         let isWinning = false;
-
                         if (currentPrice && effectiveEntryPrice) {
-                          if (b.arrow === 'UP') {
-                            isWinning = currentPrice > effectiveEntryPrice;
-                            pnlPercent = ((currentPrice - effectiveEntryPrice) / effectiveEntryPrice) * 100 * PNL_DISPLAY_MULTIPLIER;
-                          } else {
-                            isWinning = currentPrice < effectiveEntryPrice;
-                            pnlPercent = ((effectiveEntryPrice - currentPrice) / effectiveEntryPrice) * 100 * PNL_DISPLAY_MULTIPLIER;
-                          }
+                          isWinning = b.arrow === 'UP' ? currentPrice > effectiveEntryPrice : currentPrice < effectiveEntryPrice;
+                          pnlPercent = computeDisplayPnlPercent(effectiveEntryPrice, currentPrice);
                         }
-
-                        const cashoutAmount = isWinning
-                          ? b.bet + b.bet * (pnlPercent / 100)
-                          : Math.max(0, b.bet - b.bet * (pnlPercent / 100));
+                        const cashoutAmount = computeCashoutAmount(b, currentPrice, systemWinPercent, nowTs) ?? b.bet;
 
                         return (
-                          <div key={b.id} className="flex flex-col gap-1 border-b border-neutral-800 pb-2 last:border-0 last:pb-0">
-                            <div className="flex items-center justify-between text-gray-200 text-xs">
-                              <div className="flex items-center gap-2">
-                                <span className={b.arrow === 'UP' ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
-                                  {b.arrow === 'UP' ? '↑' : '↓'}
+                          <div
+                            key={b.id}
+                            className={`rounded-xl border p-2.5 flex flex-col gap-2 ${isWinning
+                              ? 'bg-green-950/30 border-green-700/40'
+                              : 'bg-red-950/30 border-red-700/40'
+                              }`}
+                          >
+                            {/* Topo — par + direção + timer */}
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`font-bold text-base leading-none ${b.arrow === 'UP' ? 'text-green-400' : 'text-red-400'
+                                  }`}>
+                                  {b.arrow === 'UP' ? '▲' : '▼'}
                                 </span>
-                                <span>{b.pair}</span>
-                                <span className="text-gray-400">{formatCurrencyBRL(b.bet)}</span>
+                                <div>
+                                  <span className="text-white font-semibold text-xs">{b.pair}</span>
+                                  <span className={`ml-1.5 text-[10px] font-medium ${b.arrow === 'UP' ? 'text-green-400' : 'text-red-400'
+                                    }`}>{b.arrow === 'UP' ? 'Compra' : 'Venda'}</span>
+                                </div>
                               </div>
-                              <span className="font-mono text-xs bg-neutral-800 px-1.5 py-0.5 rounded text-gray-400">{mm}:{ss}</span>
+                              <span className={`font-mono text-sm font-bold tabular-nums ${remSec < 30 ? 'text-yellow-400 animate-pulse' : 'text-gray-300'
+                                }`}>{mm}:{ss}</span>
                             </div>
-                            <div className="flex items-center justify-between text-[10px]">
-                              <span className="text-gray-500">
-                                Entrada: {effectiveEntryPrice?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '--'}
-                                {b.entryPrice && !b.serverId ? ' ~' : ''}
-                              </span>
-                              <div className="flex items-center gap-2">
-                                <span className={isWinning ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
-                                  {isWinning ? '+' : ''}{pnlPercent.toFixed(2)}%
+
+                            {/* Info — entrada + P/L + aposta */}
+                            <div className="flex items-center justify-between text-[10px] gap-1">
+                              <div className="flex flex-col">
+                                <span className="text-gray-500 uppercase tracking-wide" style={{ fontSize: '8px' }}>Entrada</span>
+                                <span className="text-white font-mono font-semibold text-xs">
+                                  {effectiveEntryPrice
+                                    ? effectiveEntryPrice.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                    : '--'}
                                 </span>
-                                <button
-                                  onClick={() => cashout(b)}
-                                  className={`px-1.5 py-0.5 rounded text-[9px] transition border font-semibold ${isWinning
-                                      ? 'bg-green-900/40 hover:bg-green-800/60 text-green-300 border-green-700/50'
-                                      : 'bg-red-900/40 hover:bg-red-800/60 text-red-300 border-red-700/50'
-                                    }`}
-                                >
-                                  {cashoutAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 2 })}
-                                </button>
+                              </div>
+                              <div className="flex flex-col items-center">
+                                <span className="text-gray-500 uppercase tracking-wide" style={{ fontSize: '8px' }}>P&L</span>
+                                <span className={`text-xs font-bold ${isWinning ? 'text-green-400' : 'text-red-400'
+                                  }`}>{isWinning ? '+' : ''}{pnlPercent.toFixed(2)}%</span>
+                              </div>
+                              <div className="flex flex-col items-end">
+                                <span className="text-gray-500 uppercase tracking-wide" style={{ fontSize: '8px' }}>Aposta</span>
+                                <span className="text-white font-semibold text-xs">{formatCurrencyBRL(b.bet)}</span>
                               </div>
                             </div>
+
+                            {/* Botão Cashout */}
+                            <button
+                              onClick={() => cashout(b)}
+                              className={`w-full py-2 rounded-lg font-bold text-xs transition-all active:scale-95 ${isWinning
+                                ? 'bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-400 hover:to-emerald-400 text-white'
+                                : 'bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-400 hover:to-rose-400 text-white'
+                                }`}
+                            >
+                              💰 Cashout — {cashoutAmount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </button>
                           </div>
                         );
                       })}
                   </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </main>
-      </div>
+                )
+              }
+            </div >
+          </div >
+        </main >
+      </div >
     </>
   );
 }

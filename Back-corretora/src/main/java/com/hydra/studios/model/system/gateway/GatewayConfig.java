@@ -3,17 +3,20 @@ package com.hydra.studios.model.system.gateway;
 import lombok.*;
 
 @Builder
-@Getter @Setter
+@Getter
+@Setter
 @AllArgsConstructor
 public class GatewayConfig {
 
     private String url;
     private String clientId;
-    private String apiToken;
+    private String clientSecret;
+    private String apiToken; // mantido para compatibilidade legada
 
     public GatewayConfig() {
-        this.url = "https://api.tribopay.com.br/api/public/v1";
-        this.apiToken = "";
+        this.url = "https://api.veopag.com";
         this.clientId = "";
+        this.clientSecret = "";
+        this.apiToken = "";
     }
 }

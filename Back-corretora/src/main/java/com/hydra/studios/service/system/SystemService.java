@@ -55,7 +55,12 @@ public class SystemService {
                     .favicon("https://example.com/favicon.ico")
                     .transaction(new TransactionConfig())
                     .gateway(new GatewayConfig())
+                    .winPercent(80)
                     .build();
+            systemRepository.save(system);
+        }
+        if (system.getWinPercent() <= 0) {
+            system.setWinPercent(80);
             systemRepository.save(system);
         }
 
@@ -67,15 +72,19 @@ public class SystemService {
 
         var transactions = transactionRepository.findAllByStatus(TransactionStatus.APPROVED);
 
-        var joined = transactions.stream().filter(t -> t.getType().equals(TransactionType.CREDIT)).mapToDouble(Transaction::getAmount).sum();
-        var left = transactions.stream().filter(t -> t.getType().equals(TransactionType.DEBIT)).mapToDouble(Transaction::getAmount).sum();
+        var joined = transactions.stream().filter(t -> t.getType().equals(TransactionType.CREDIT))
+                .mapToDouble(Transaction::getAmount).sum();
+        var left = transactions.stream().filter(t -> t.getType().equals(TransactionType.DEBIT))
+                .mapToDouble(Transaction::getAmount).sum();
 
-        var lastAccounts24h = accountRepository.countByFirstLoginBefore(System.currentTimeMillis() + TimeUnit.DAYS.toMillis(1));
+        var lastAccounts24h = accountRepository
+                .countByFirstLoginBefore(System.currentTimeMillis() + TimeUnit.DAYS.toMillis(1));
 
         var bets24h = betRepository.findBetsByCreatedAtBefore(System.currentTimeMillis() - TimeUnit.DAYS.toMillis(1));
         var operationsRecent = bets24h.size();
 
-        var lastFive = bets24h.stream().sorted((a, b) -> Long.compare(b.getCreatedAt(), a.getCreatedAt())).limit(5).toList();
+        var lastFive = bets24h.stream().sorted((a, b) -> Long.compare(b.getCreatedAt(), a.getCreatedAt())).limit(5)
+                .toList();
         var lastFiveJson = App.getGson().toJsonTree(lastFive).getAsJsonArray();
 
         for (var bet : lastFiveJson) {
@@ -100,6 +109,7 @@ public class SystemService {
 
         return json;
     }
+
     public JsonObject getTransactions() {
         var json = new JsonObject();
 
@@ -117,39 +127,46 @@ public class SystemService {
         var rejectedJson = App.getGson().toJsonTree(transactionsRejected).getAsJsonArray();
 
         for (var transaction : joinedJson) {
-            var acc = accountRepository.findById(transaction.getAsJsonObject().get("accountId").getAsString()).orElse(null);
+            var acc = accountRepository.findById(transaction.getAsJsonObject().get("accountId").getAsString())
+                    .orElse(null);
             if (acc != null) {
                 transaction.getAsJsonObject().addProperty("user", acc.getFirstName() + " " + acc.getLastName());
             }
         }
 
         for (var transaction : leftJson) {
-            var acc = accountRepository.findById(transaction.getAsJsonObject().get("accountId").getAsString()).orElse(null);
+            var acc = accountRepository.findById(transaction.getAsJsonObject().get("accountId").getAsString())
+                    .orElse(null);
             if (acc != null) {
                 transaction.getAsJsonObject().addProperty("user", acc.getFirstName() + " " + acc.getLastName());
             }
         }
 
         for (var transaction : pendingJson) {
-            var acc = accountRepository.findById(transaction.getAsJsonObject().get("accountId").getAsString()).orElse(null);
+            var acc = accountRepository.findById(transaction.getAsJsonObject().get("accountId").getAsString())
+                    .orElse(null);
             if (acc != null) {
                 transaction.getAsJsonObject().addProperty("user", acc.getFirstName() + " " + acc.getLastName());
             }
         }
 
         for (var transaction : rejectedJson) {
-            var acc = accountRepository.findById(transaction.getAsJsonObject().get("accountId").getAsString()).orElse(null);
+            var acc = accountRepository.findById(transaction.getAsJsonObject().get("accountId").getAsString())
+                    .orElse(null);
             if (acc != null) {
                 transaction.getAsJsonObject().addProperty("user", acc.getFirstName() + " " + acc.getLastName());
             }
         }
 
-
         json.addProperty("joined", joined.stream().mapToDouble(Transaction::getAmount).sum());
-        json.addProperty("joined_last_24h", joined.stream().filter(t -> t.getCreateAt() >= System.currentTimeMillis() - TimeUnit.DAYS.toMillis(1)).mapToDouble(Transaction::getAmount).sum());
+        json.addProperty("joined_last_24h",
+                joined.stream().filter(t -> t.getCreateAt() >= System.currentTimeMillis() - TimeUnit.DAYS.toMillis(1))
+                        .mapToDouble(Transaction::getAmount).sum());
 
         json.addProperty("left", left.stream().mapToDouble(Transaction::getAmount).sum());
-        json.addProperty("left_last_24h", left.stream().filter(t -> t.getCreateAt() >= System.currentTimeMillis() - TimeUnit.DAYS.toMillis(1)).mapToDouble(Transaction::getAmount).sum());
+        json.addProperty("left_last_24h",
+                left.stream().filter(t -> t.getCreateAt() >= System.currentTimeMillis() - TimeUnit.DAYS.toMillis(1))
+                        .mapToDouble(Transaction::getAmount).sum());
 
         json.addProperty("pending_transactions", transactionsPending.size());
 
@@ -160,6 +177,7 @@ public class SystemService {
 
         return json;
     }
+
     public JsonObject getAccounts() {
         var json = new JsonObject();
 
@@ -177,6 +195,7 @@ public class SystemService {
 
         return json;
     }
+
     public JsonObject edit(SystemConfig system, JsonObject body) {
         if (body.has("name")) {
             system.setName(body.get("name").getAsString());
@@ -207,12 +226,19 @@ public class SystemService {
             if (gateway.has("clientId")) {
                 system.getGateway().setClientId(gateway.get("clientId").getAsString());
             }
+            if (gateway.has("clientSecret")) {
+                system.getGateway().setClientSecret(gateway.get("clientSecret").getAsString());
+            }
+        }
+        if (body.has("winPercent")) {
+            system.setWinPercent(body.get("winPercent").getAsInt());
         }
 
         systemRepository.save(system);
 
         return body;
     }
+
     public Transaction getTransactionById(String id) {
         return transactionRepository.findById(id).orElse(null);
     }
@@ -249,7 +275,9 @@ public class SystemService {
         for (var aff : affiliateJson) {
             var t = transactionRepository.findAllByAccountId(aff.getAsJsonObject().get("id").getAsString());
 
-            var deposits = t.stream().filter(tr -> tr.getType().equals(TransactionType.CREDIT)).filter(tr -> tr.getStatus().equals(TransactionStatus.APPROVED)).mapToDouble(Transaction::getAmount).sum();
+            var deposits = t.stream().filter(tr -> tr.getType().equals(TransactionType.CREDIT))
+                    .filter(tr -> tr.getStatus().equals(TransactionStatus.APPROVED)).mapToDouble(Transaction::getAmount)
+                    .sum();
 
             aff.getAsJsonObject().addProperty("sumDeposit", deposits);
 
@@ -274,6 +302,7 @@ public class SystemService {
     public void save(SystemConfig system) {
         systemRepository.save(system);
     }
+
     public void saveTransaction(Transaction transaction) {
         transactionRepository.save(transaction);
     }
