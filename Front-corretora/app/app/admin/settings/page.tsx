@@ -78,6 +78,7 @@ export default function SettingsPage() {
         minWithdraw: minWithdraw === '' ? 0 : Number(minWithdraw),
       },
       gateway: {
+        url: gatewayUrl,
         apitoken: gatewayApiToken,
         clientId: gatewayClientId,
         clientSecret: gatewayClientSecret,

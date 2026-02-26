@@ -220,6 +220,9 @@ public class SystemService {
         }
         if (body.has("gateway")) {
             var gateway = body.getAsJsonObject("gateway");
+            if (gateway.has("url")) {
+                system.getGateway().setUrl(gateway.get("url").getAsString());
+            }
             if (gateway.has("apitoken")) {
                 system.getGateway().setApiToken(gateway.get("apitoken").getAsString());
             }
