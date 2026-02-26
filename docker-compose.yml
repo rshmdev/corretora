@@ -40,23 +40,6 @@ services:
     networks:
       - corretora-network
 
-  nginx:
-    image: nginx:latest
-    container_name: reverse-proxy
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      # SSL Certificates from the Host (VPS)
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-    depends_on:
-      - frontend
-      - backend
-    networks:
-      - corretora-network
-
 networks:
   corretora-network:
     driver: bridge
