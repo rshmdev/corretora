@@ -18,6 +18,8 @@ export default function SettingsPage() {
   const [minWithdraw, setMinWithdraw] = useState<string>("");
   const [gatewayUrl, setGatewayUrl] = useState("");
   const [gatewayApiToken, setGatewayApiToken] = useState("");
+  const [gatewayClientId, setGatewayClientId] = useState("");
+  const [gatewayClientSecret, setGatewayClientSecret] = useState("");
   const [winPercent, setWinPercent] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
@@ -48,6 +50,8 @@ export default function SettingsPage() {
         setMinWithdraw(String(d.transaction?.minWithdraw ?? ''));
         setGatewayUrl(String(d.gateway?.url || ''));
         setGatewayApiToken(String(d.gateway?.apiToken || ''));
+        setGatewayClientId(String(d.gateway?.clientId || ''));
+        setGatewayClientSecret(String(d.gateway?.clientSecret || ''));
         setWinPercent(String(d.winPercent ?? ''));
       } catch (e: any) {
         try { toast.error(e?.message || 'Erro ao buscar configurações'); } catch {}
@@ -75,6 +79,8 @@ export default function SettingsPage() {
       },
       gateway: {
         apitoken: gatewayApiToken,
+        clientId: gatewayClientId,
+        clientSecret: gatewayClientSecret,
       },
     };
     try {
@@ -199,6 +205,26 @@ export default function SettingsPage() {
                 onChange={(e) => setGatewayApiToken(e.target.value)}
                 className="bg-neutral-800 border border-neutral-700 text-white"
                 placeholder="token"
+              />
+            </div>
+            <div>
+              <Label className="text-white mb-1 block">Client ID</Label>
+              <Input
+                type="text"
+                value={gatewayClientId}
+                onChange={(e) => setGatewayClientId(e.target.value)}
+                className="bg-neutral-800 border border-neutral-700 text-white"
+                placeholder="client_id"
+              />
+            </div>
+            <div>
+              <Label className="text-white mb-1 block">Client Secret</Label>
+              <Input
+                type="text"
+                value={gatewayClientSecret}
+                onChange={(e) => setGatewayClientSecret(e.target.value)}
+                className="bg-neutral-800 border border-neutral-700 text-white"
+                placeholder="client_secret"
               />
             </div>
           </section>
